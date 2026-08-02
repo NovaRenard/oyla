@@ -39,12 +39,25 @@ import kz.oyla.app.ui.theme.OylaNavy
 import kz.oyla.app.ui.theme.OylaTextMuted
 
 @Composable
-fun SpecialistWaitingScreen(viewModel: SpecialistSessionViewModel, onOpenExercise: () -> Unit, onCancelled: () -> Unit) {
+fun SpecialistWaitingScreen(
+    viewModel: SpecialistSessionViewModel,
+    onOpenExercise: () -> Unit,
+    onOpenSummary: () -> Unit,
+    onCancelled: () -> Unit
+) {
     val state by viewModel.uiState.collectAsState()
     LaunchedEffect(Unit) { viewModel.restoreActiveSession() }
-    LaunchedEffect(state.exercise.exerciseStatus) {
-        if (state.exercise.exerciseStatus in setOf(ExerciseUiStatus.SHOWN, ExerciseUiStatus.RUNNING, ExerciseUiStatus.COMPLETED)) {
+    LaunchedEffect(state.exercise.exerciseStatus, state.exercise.planCompleted) {
+        if (state.exercise.planCompleted) {
+            onOpenSummary()
+        } else if (state.exercise.exerciseStatus in setOf(ExerciseUiStatus.SHOWN, ExerciseUiStatus.RUNNING, ExerciseUiStatus.COMPLETED)) {
             onOpenExercise()
+        }
+    }
+    LaunchedEffect(state.sessionEndedId) {
+        if (state.sessionEndedId != null) {
+            viewModel.consumeSessionEnd()
+            onCancelled()
         }
     }
     BackHandler(enabled = true) { }

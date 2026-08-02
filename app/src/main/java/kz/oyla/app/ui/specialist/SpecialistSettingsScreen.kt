@@ -56,8 +56,8 @@ fun SpecialistSettingsScreen(
         }
         OylaLogo(
             modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth(0.16f)
+                .align(Alignment.TopEnd)
+                .fillMaxWidth(0.13f)
         )
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -96,9 +96,10 @@ fun SpecialistSettingsScreen(
                 icon = Icons.Outlined.SwapHoriz,
                 iconDescription = stringResource(R.string.change_device_mode),
                 onClick = onChangeMode,
-                textSize = 21.sp,
-                minHeight = 60.dp,
+                textSize = 18.sp,
+                minHeight = 52.dp,
                 modifier = Modifier
+                    .widthIn(max = 390.dp)
                     .fillMaxWidth()
                     .padding(top = 16.dp)
             )

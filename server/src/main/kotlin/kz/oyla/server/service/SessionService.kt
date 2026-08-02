@@ -64,7 +64,7 @@ class SessionService(
             is ChildConnectionResult.Connected -> result.session.toConnectResponse()
             ChildConnectionResult.NotFound -> throw ApiException.notFound("Код не найден")
             ChildConnectionResult.Expired -> throw ApiException.gone("Срок действия кода истёк")
-            ChildConnectionResult.ConnectedToAnotherDevice -> throw ApiException.conflict(
+            ChildConnectionResult.ConnectedToAnotherDevice -> throw ApiException.alreadyConnected(
                 "К этому занятию уже подключено другое устройство"
             )
         }
@@ -87,7 +87,6 @@ class SessionService(
 
     suspend fun cancel(sessionId: String, token: String?): SessionRecord {
         val authorized = authorize(sessionId, token)
-        if (authorized.role != DeviceRole.SPECIALIST) throw ApiException.forbidden()
         return repository.cancel(authorized.session.id, clock.instant())
             ?: throw ApiException.notFound("Занятие не найдено")
     }
@@ -150,7 +149,10 @@ class ApiException private constructor(
         fun unauthorized() = ApiException(401, "UNAUTHORIZED", "Необходима авторизация устройства")
         fun forbidden() = ApiException(403, "FORBIDDEN", "Недостаточно прав для этого действия")
         fun notFound(message: String) = ApiException(404, "NOT_FOUND", message)
-        fun conflict(message: String) = ApiException(409, "ALREADY_CONNECTED", message)
+        fun conflict(message: String) = ApiException(409, "CONFLICT", message)
+        fun alreadyConnected(message: String) = ApiException(409, "ALREADY_CONNECTED", message)
+        fun planCompleted() = ApiException(409, "PLAN_COMPLETED", "Все задания уже выполнены")
+        fun planNotCompleted() = ApiException(409, "EXERCISE_PLAN_NOT_COMPLETED", "Не все задания завершены")
         fun gone(message: String) = ApiException(410, "SESSION_EXPIRED", message)
     }
 }

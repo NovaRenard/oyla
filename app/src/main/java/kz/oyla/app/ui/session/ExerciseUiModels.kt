@@ -40,6 +40,10 @@ data class ExerciseUiState(
     val latestAnswer: AnswerUiModel? = null,
     val attemptCount: Int = 0,
     val startedAt: String? = null,
+    val currentPosition: Int = 1,
+    val totalExercises: Int = 5,
+    val hasNext: Boolean = false,
+    val planCompleted: Boolean = false,
     val elapsedMillis: Long = 0,
     val isCommandLoading: Boolean = false,
     val isAnswerPending: Boolean = false,
@@ -66,5 +70,34 @@ internal fun ExerciseStateResponse.toUiState(sessionId: String, childName: Strin
     sessionId = sessionId, childName = childName, connectionState = connection,
     exercise = exercise?.toUi(correctOptionId), sessionExerciseId = sessionExerciseId,
     exerciseStatus = exerciseStatus.toExerciseUiStatus(), latestAnswer = latestAnswer?.toUi(),
-    attemptCount = attemptCount, startedAt = startedAt
+    attemptCount = attemptCount, startedAt = startedAt, currentPosition = currentPosition,
+    totalExercises = totalExercises, hasNext = hasNext, planCompleted = planCompleted
 )
+
+/** A new plan position must never retain result, timer or audio state from its predecessor. */
+internal fun ExerciseUiState.resetForExerciseChange(
+    newSessionExerciseId: String?,
+    newExercise: ExerciseUiModel?,
+    newStatus: ExerciseUiStatus,
+    newPosition: Int,
+    newTotal: Int,
+    newHasNext: Boolean,
+    newPlanCompleted: Boolean
+) = ExerciseUiState(
+    sessionId = sessionId,
+    childName = childName,
+    connectionState = connectionState,
+    exercise = newExercise,
+    sessionExerciseId = newSessionExerciseId,
+    exerciseStatus = newStatus,
+    currentPosition = newPosition,
+    totalExercises = newTotal,
+    hasNext = newHasNext,
+    planCompleted = newPlanCompleted
+)
+
+internal fun ExerciseUiState.canMoveToNext() =
+    exerciseStatus == ExerciseUiStatus.COMPLETED && currentPosition < totalExercises && !isCommandLoading
+
+internal fun ExerciseUiState.canOpenSummary() =
+    exerciseStatus == ExerciseUiStatus.COMPLETED && currentPosition == totalExercises && !isCommandLoading

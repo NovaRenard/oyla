@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -27,16 +29,27 @@ import androidx.compose.ui.unit.sp
 import kz.oyla.app.R
 import kz.oyla.app.ui.components.OylaBackground
 import kz.oyla.app.ui.components.OylaLogo
+import kz.oyla.app.ui.components.OylaPrimaryButton
 import kz.oyla.app.ui.theme.OylaNavy
 import kz.oyla.app.ui.theme.OylaTextMuted
 
 @Composable
-fun ChildWaitingScreen(viewModel: ChildSessionViewModel, onExerciseShown: () -> Unit) {
+fun ChildWaitingScreen(
+    viewModel: ChildSessionViewModel,
+    onExerciseShown: () -> Unit,
+    onCancelled: () -> Unit
+) {
     val state by viewModel.uiState.collectAsState()
     LaunchedEffect(Unit) { viewModel.restoreActiveSession() }
     LaunchedEffect(state.exercise.exerciseStatus) {
         if (state.exercise.exerciseStatus in setOf(ExerciseUiStatus.SHOWN, ExerciseUiStatus.RUNNING, ExerciseUiStatus.COMPLETED)) {
             onExerciseShown()
+        }
+    }
+    LaunchedEffect(state.sessionEndedId) {
+        if (state.sessionEndedId != null) {
+            viewModel.consumeSessionEnd()
+            onCancelled()
         }
     }
     BackHandler(enabled = true) { }
@@ -80,6 +93,16 @@ fun ChildWaitingScreen(viewModel: ChildSessionViewModel, onExerciseShown: () -> 
                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                 SocketStatus(state.socketState)
                 state.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center) }
+                OylaPrimaryButton(
+                    text = stringResource(R.string.cancel_session),
+                    icon = Icons.Outlined.Cancel,
+                    iconDescription = stringResource(R.string.cancel_session),
+                    enabled = !state.isLoading,
+                    onClick = { viewModel.cancelSession(onCancelled) },
+                    textSize = 18.sp,
+                    minHeight = 52.dp,
+                    modifier = Modifier.fillMaxWidth(0.58f)
+                )
             }
         }
     }

@@ -64,7 +64,12 @@ data class StateSnapshotEvent(
     val correctOptionId: String? = null,
     val latestAnswer: AnswerExerciseResponse? = null,
     val attemptCount: Int = 0,
-    val startedAt: String? = null
+    val startedAt: String? = null,
+    val currentPosition: Int = 1,
+    val totalExercises: Int = 5,
+    val hasPrevious: Boolean = false,
+    val hasNext: Boolean = true,
+    val planCompleted: Boolean = false
 )
 
 @Serializable
@@ -94,7 +99,9 @@ data class ExerciseShownEvent(
     val sessionExerciseId: String,
     val exercise: ExerciseDto,
     val exerciseStatus: ExerciseStatus,
-    val correctOptionId: String? = null
+    val correctOptionId: String? = null,
+    val currentPosition: Int = 1,
+    val totalExercises: Int = 5
 )
 
 @Serializable
@@ -103,7 +110,9 @@ data class ExerciseStartedEvent(
     val sessionId: String,
     val sessionExerciseId: String,
     val exerciseStatus: ExerciseStatus,
-    val startedAt: String
+    val startedAt: String,
+    val currentPosition: Int = 1,
+    val totalExercises: Int = 5
 )
 
 @Serializable
@@ -128,4 +137,29 @@ data class ExerciseCompletedEvent(
     val attemptNumber: Int,
     val responseTimeMs: Long,
     val exerciseStatus: ExerciseStatus
+)
+
+@Serializable
+data class ExerciseChangedEvent(
+    val type: String = "EXERCISE_CHANGED",
+    val sessionId: String,
+    val sessionExerciseId: String,
+    val exerciseStatus: ExerciseStatus,
+    val exercise: ExerciseDto? = null,
+    val correctOptionId: String? = null,
+    val currentPosition: Int,
+    val totalExercises: Int,
+    val attemptCount: Int = 0,
+    val latestAnswer: AnswerExerciseResponse? = null,
+    val startedAt: String? = null,
+    val planCompleted: Boolean = false
+)
+
+@Serializable
+data class ExercisePlanCompletedEvent(
+    val type: String = "EXERCISE_PLAN_COMPLETED",
+    val sessionId: String,
+    val currentPosition: Int,
+    val totalExercises: Int,
+    val planCompleted: Boolean = true
 )

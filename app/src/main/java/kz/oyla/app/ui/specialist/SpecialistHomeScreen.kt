@@ -93,9 +93,10 @@ fun SpecialistHomeScreen(
                     icon = Icons.Outlined.Add,
                     iconDescription = stringResource(R.string.content_description_add),
                     onClick = onNewLesson,
-                    textSize = 28.sp,
-                    minHeight = 90.dp,
+                    textSize = 22.sp,
+                    minHeight = 68.dp,
                     modifier = Modifier
+                        .widthIn(max = 400.dp)
                         .fillMaxWidth()
                         .padding(top = 16.dp)
                 )

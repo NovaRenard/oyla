@@ -88,6 +88,9 @@ data class AnswerExerciseResponse(
 )
 
 @Serializable
+data class NextExerciseRequest(val currentSessionExerciseId: String)
+
+@Serializable
 data class ExerciseStateResponse(
     val sessionExerciseId: String? = null,
     val exerciseStatus: String = "PENDING",
@@ -95,7 +98,42 @@ data class ExerciseStateResponse(
     val correctOptionId: String? = null,
     val latestAnswer: AnswerExerciseResponse? = null,
     val attemptCount: Int = 0,
-    val startedAt: String? = null
+    val startedAt: String? = null,
+    val currentPosition: Int = 1,
+    val totalExercises: Int = 5,
+    val hasPrevious: Boolean = false,
+    val hasNext: Boolean = true,
+    val planCompleted: Boolean = false
+)
+
+@Serializable
+data class ExerciseSummaryItemDto(
+    val position: Int,
+    val exerciseId: String,
+    val instructionText: String,
+    val correctOptionLabel: String,
+    val attemptCount: Int,
+    val incorrectAttempts: Int,
+    val firstAttemptCorrect: Boolean,
+    val timeToCorrectMs: Long,
+    val startedAt: String,
+    val completedAt: String
+)
+
+@Serializable
+data class SessionSummaryResponse(
+    val sessionId: String,
+    val childName: String,
+    val completedExercises: Int,
+    val totalExercises: Int,
+    val totalAttempts: Int,
+    val incorrectAttempts: Int,
+    val firstAttemptCorrectCount: Int,
+    val firstAttemptCorrectPercent: Int,
+    val activeDurationMs: Long,
+    val startedAt: String,
+    val completedAt: String,
+    val exercises: List<ExerciseSummaryItemDto>
 )
 
 @Serializable
@@ -115,5 +153,10 @@ data class SessionWebSocketEvent(
     val responseTimeMs: Long? = null,
     val latestAnswer: AnswerExerciseResponse? = null,
     val attemptCount: Int? = null,
-    val startedAt: String? = null
+    val startedAt: String? = null,
+    val currentPosition: Int? = null,
+    val totalExercises: Int? = null,
+    val hasPrevious: Boolean? = null,
+    val hasNext: Boolean? = null,
+    val planCompleted: Boolean? = null
 )

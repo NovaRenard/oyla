@@ -37,7 +37,12 @@ fun Route.sessionWebSocketRoutes(service: SessionService, exercises: ExerciseSer
                             correctOptionId = snapshot.correctOptionId,
                             latestAnswer = snapshot.latestAnswer,
                             attemptCount = snapshot.attemptCount,
-                            startedAt = snapshot.startedAt
+                            startedAt = snapshot.startedAt,
+                            currentPosition = snapshot.currentPosition,
+                            totalExercises = snapshot.totalExercises,
+                            hasPrevious = snapshot.hasPrevious,
+                            hasNext = snapshot.hasNext,
+                            planCompleted = snapshot.planCompleted
                         )
                     )
                 )

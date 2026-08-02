@@ -2,7 +2,6 @@ package kz.oyla.server.service
 
 import java.time.Clock
 import java.time.Duration
-import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -14,6 +13,9 @@ import kz.oyla.server.model.dto.AnswerExerciseResponse
 import kz.oyla.server.model.dto.ExerciseDto
 import kz.oyla.server.model.dto.ExerciseOptionDto
 import kz.oyla.server.model.dto.ExerciseStateResponse
+import kz.oyla.server.model.dto.ExerciseSummaryItemDto
+import kz.oyla.server.model.dto.NextExerciseRequest
+import kz.oyla.server.model.dto.SessionSummaryResponse
 import kz.oyla.server.model.dto.ShowExerciseRequest
 import kz.oyla.server.model.dto.ShowExerciseResponse
 import kz.oyla.server.model.dto.SpecialistExerciseDto
@@ -28,40 +30,54 @@ class ExerciseService(
     private val exercises: ExerciseRepository,
     private val clock: Clock = Clock.systemUTC()
 ) {
+    companion object {
+        val defaultPlan = listOf(
+            "sound-r-rocket", "sound-r-fish", "sound-l-lamp", "sound-s-dog", "sound-sh-ball"
+        )
+    }
+
     private val sessionMutexes = mutableMapOf<UUID, Mutex>()
     private fun mutexFor(id: UUID): Mutex = synchronized(sessionMutexes) { sessionMutexes.getOrPut(id) { Mutex() } }
 
+    /** Creates missing plan positions only; legacy position 1 and its attempts stay untouched. */
+    suspend fun ensureDefaultExercisePlan(sessionId: UUID) = mutexFor(sessionId).withLock {
+        ensureDefaultExercisePlanLocked(sessionId)
+    }
+
+    private suspend fun ensureDefaultExercisePlanLocked(sessionId: UUID) {
+        val existing = exercises.findSessionExercises(sessionId).associateBy { it.position }
+        val now = clock.instant()
+        val missing = defaultPlan.mapIndexedNotNull { index, exerciseId ->
+            val position = index + 1
+            if (existing.containsKey(position)) null else SessionExerciseRecord(
+                id = UUID.randomUUID(), sessionId = sessionId, exerciseId = exerciseId,
+                status = ExerciseStatus.PENDING, shownAt = null, startedAt = null, completedAt = null,
+                createdAt = now, position = position, isCurrent = existing.isEmpty() && position == 1
+            )
+        }
+        if (missing.isNotEmpty()) exercises.createSessionExercises(missing)
+    }
+
     suspend fun getExercise(id: String): ExerciseDto = exercises.findExercise(id)
-        ?.takeIf { it.isActive }
-        ?.toDto()
-        ?: throw ApiException.notFound("Упражнение не найдено")
+        ?.takeIf { it.isActive }?.toDto() ?: throw ApiException.notFound("Упражнение не найдено")
 
     suspend fun show(authorized: AuthorizedSession, request: ShowExerciseRequest): ShowExerciseResponse {
         requireSpecialist(authorized)
         if (authorized.session.status != SessionStatus.READY || authorized.session.childDeviceId == null) {
             throw ApiException.conflict("Нельзя показать задание: ребёнок не подключён")
         }
-        val definition = exercises.findExercise(request.exerciseId)?.takeIf { it.isActive }
-            ?: throw ApiException.notFound("Упражнение не найдено")
         return mutexFor(authorized.session.id).withLock {
-            val existing = exercises.findSessionExercise(authorized.session.id)
-            val record = when {
-                existing == null -> SessionExerciseRecord(
-                    id = UUID.randomUUID(), sessionId = authorized.session.id, exerciseId = definition.id,
-                    status = ExerciseStatus.SHOWN, shownAt = clock.instant(), startedAt = null,
-                    completedAt = null, createdAt = clock.instant()
-                ).let { created ->
-                    if (exercises.createSessionExercise(created)) created else {
-                        val raced = exercises.findSessionExercise(authorized.session.id)
-                            ?: throw ApiException.conflict("Не удалось создать упражнение")
-                        if (raced.exerciseId != definition.id) throw ApiException.conflict("В этом занятии уже создано другое упражнение")
-                        raced
-                    }
-                }
-                existing.exerciseId == definition.id -> existing
-                else -> throw ApiException.conflict("В этом занятии уже создано другое упражнение")
+            ensureDefaultExercisePlanLocked(authorized.session.id)
+            val record = currentLocked(authorized.session.id)
+            if (request.exerciseId != record.exerciseId) throw ApiException.conflict("Можно показать только текущее задание")
+            val updated = when (record.status) {
+                ExerciseStatus.PENDING -> record.copy(status = ExerciseStatus.SHOWN, shownAt = clock.instant())
+                    .also { exercises.updateSessionExercise(it) }
+                ExerciseStatus.SHOWN -> record // idempotent repeat of show
+                ExerciseStatus.RUNNING -> throw ApiException.conflict("Упражнение уже запущено")
+                ExerciseStatus.COMPLETED -> throw ApiException.conflict("Упражнение уже завершено")
             }
-            ShowExerciseResponse(record.id.toString(), record.exerciseId, record.status)
+            ShowExerciseResponse(updated.id.toString(), updated.exerciseId, updated.status)
         }
     }
 
@@ -69,14 +85,18 @@ class ExerciseService(
         requireSpecialist(authorized)
         val recordId = request.sessionExerciseId.toUuid()
         return mutexFor(authorized.session.id).withLock {
-            val record = exercises.findSessionExercise(authorized.session.id)
-                ?.takeIf { it.id == recordId }
+            ensureDefaultExercisePlanLocked(authorized.session.id)
+            val record = currentLocked(authorized.session.id).takeIf { it.id == recordId }
                 ?: throw ApiException.notFound("Упражнение занятия не найдено")
-            when (record.status) {
-                ExerciseStatus.SHOWN -> Unit
-                ExerciseStatus.PENDING -> throw ApiException.conflict("Упражнение ещё не началось")
-                ExerciseStatus.RUNNING -> throw ApiException.conflict("Упражнение уже запущено")
-                ExerciseStatus.COMPLETED -> throw ApiException.conflict("Занятие уже завершено")
+            if (record.status != ExerciseStatus.SHOWN) {
+                throw ApiException.conflict(
+                    when (record.status) {
+                        ExerciseStatus.PENDING -> "Упражнение ещё не показано"
+                        ExerciseStatus.RUNNING -> "Упражнение уже запущено"
+                        ExerciseStatus.COMPLETED -> "Упражнение уже завершено"
+                        ExerciseStatus.SHOWN -> error("unreachable")
+                    }
+                )
             }
             val started = clock.instant()
             val updated = record.copy(status = ExerciseStatus.RUNNING, startedAt = started)
@@ -90,14 +110,16 @@ class ExerciseService(
         val sessionExerciseId = request.sessionExerciseId.toUuid()
         val eventId = request.clientEventId.toUuid()
         return mutexFor(authorized.session.id).withLock {
-            exercises.findAttemptByClientEventId(eventId)?.let { duplicate ->
-                if (duplicate.sessionExerciseId != sessionExerciseId) throw ApiException.badRequest("Некорректный ответ")
-                return@withLock duplicate.toResponse(exercises.findSessionExercise(authorized.session.id)?.status ?: ExerciseStatus.RUNNING)
-            }
-            val record = exercises.findSessionExercise(authorized.session.id)
-                ?.takeIf { it.id == sessionExerciseId }
+            ensureDefaultExercisePlanLocked(authorized.session.id)
+            val record = currentLocked(authorized.session.id).takeIf { it.id == sessionExerciseId }
                 ?: throw ApiException.notFound("Упражнение занятия не найдено")
-            if (record.status == ExerciseStatus.COMPLETED) throw ApiException.conflict("Занятие уже завершено")
+            exercises.findAttemptByClientEventId(eventId)?.let { duplicate ->
+                if (duplicate.sessionExerciseId != sessionExerciseId || duplicate.selectedOptionId != request.selectedOptionId) {
+                    throw ApiException.badRequest("Некорректный повтор ответа")
+                }
+                return@withLock duplicate.toResponse(record.status, labelFor(record.exerciseId, duplicate.selectedOptionId))
+            }
+            if (record.status == ExerciseStatus.COMPLETED) throw ApiException.conflict("Упражнение уже завершено")
             if (record.status != ExerciseStatus.RUNNING || record.startedAt == null) {
                 throw ApiException.conflict("Упражнение ещё не началось")
             }
@@ -105,34 +127,62 @@ class ExerciseService(
             val option = definition.options.firstOrNull { it.id == request.selectedOptionId }
                 ?: throw ApiException.badRequest("Выбранный вариант не относится к упражнению")
             val acceptedAt = clock.instant()
-            val responseTime = Duration.between(record.startedAt, acceptedAt).toMillis().coerceAtLeast(0)
             val attempt = ExerciseAttemptRecord(
                 id = UUID.randomUUID(), sessionExerciseId = record.id, selectedOptionId = option.id,
                 attemptNumber = exercises.countAttempts(record.id) + 1,
-                isCorrect = option.id == definition.correctOptionId, responseTimeMs = responseTime,
+                isCorrect = option.id == definition.correctOptionId,
+                responseTimeMs = Duration.between(record.startedAt, acceptedAt).toMillis().coerceAtLeast(0),
                 clientEventId = eventId, createdAt = acceptedAt
             )
             if (!exercises.createAttempt(attempt)) {
-                return@withLock checkNotNull(exercises.findAttemptByClientEventId(eventId)).toResponse(record.status)
+                return@withLock checkNotNull(exercises.findAttemptByClientEventId(eventId))
+                    .toResponse(record.status, option.label)
             }
             val status = if (attempt.isCorrect) ExerciseStatus.COMPLETED else ExerciseStatus.RUNNING
-            if (attempt.isCorrect) exercises.updateSessionExercise(
-                record.copy(status = ExerciseStatus.COMPLETED, completedAt = acceptedAt)
-            )
+            if (attempt.isCorrect) exercises.updateSessionExercise(record.copy(status = status, completedAt = acceptedAt))
             attempt.toResponse(status, option.label)
         }
     }
 
+    suspend fun next(authorized: AuthorizedSession, request: NextExerciseRequest): ExerciseStateResponse {
+        requireSpecialist(authorized)
+        val currentId = request.currentSessionExerciseId.toUuid()
+        return mutexFor(authorized.session.id).withLock {
+            ensureDefaultExercisePlanLocked(authorized.session.id)
+            val current = currentLocked(authorized.session.id)
+            if (current.id != currentId) throw ApiException.conflict("Текущее задание уже изменилось")
+            if (current.status != ExerciseStatus.COMPLETED) throw ApiException.conflict("Сначала завершите текущее задание")
+            if (current.position == defaultPlan.size) throw ApiException.planCompleted()
+            val next = exercises.findSessionExerciseByPosition(authorized.session.id, current.position + 1)
+                ?: throw ApiException.conflict("Следующее задание не найдено")
+            if (next.status != ExerciseStatus.PENDING) throw ApiException.conflict("Следующее задание уже недоступно")
+            if (!exercises.setCurrentExercise(authorized.session.id, next.id)) {
+                throw ApiException.conflict("Не удалось переключить задание")
+            }
+            stateForLocked(authorized)
+        }
+    }
+
     suspend fun stateFor(authorized: AuthorizedSession): ExerciseStateResponse {
-        val sessionExercise = exercises.findSessionExercise(authorized.session.id) ?: return ExerciseStateResponse()
-        val definition = exercises.findExercise(sessionExercise.exerciseId) ?: return ExerciseStateResponse()
-        val latest = exercises.findLatestAttempt(sessionExercise.id)
+        ensureDefaultExercisePlan(authorized.session.id)
+        return stateForLocked(authorized)
+    }
+
+    private suspend fun stateForLocked(authorized: AuthorizedSession): ExerciseStateResponse {
+        val record = exercises.findCurrentSessionExercise(authorized.session.id) ?: return ExerciseStateResponse()
+        val definition = exercises.findExercise(record.exerciseId) ?: throw ApiException.notFound("Упражнение не найдено")
+        val latest = exercises.findLatestAttempt(record.id)
+        val total = defaultPlan.size
+        val planCompleted = exercises.countCompletedSessionExercises(authorized.session.id) == total
+        val childCanSeeExercise = record.status != ExerciseStatus.PENDING
         return ExerciseStateResponse(
-            sessionExerciseId = sessionExercise.id.toString(), exerciseStatus = sessionExercise.status,
-            exercise = definition.toDto(),
+            sessionExerciseId = record.id.toString(), exerciseStatus = record.status,
+            exercise = definition.toDto().takeIf { authorized.role == DeviceRole.SPECIALIST || childCanSeeExercise },
             correctOptionId = definition.correctOptionId.takeIf { authorized.role == DeviceRole.SPECIALIST },
-            latestAnswer = latest?.toResponse(sessionExercise.status, definition.options.first { it.id == latest.selectedOptionId }.label),
-            attemptCount = exercises.countAttempts(sessionExercise.id), startedAt = sessionExercise.startedAt?.toString()
+            latestAnswer = latest?.toResponse(record.status, labelFor(record.exerciseId, latest.selectedOptionId)),
+            attemptCount = exercises.countAttempts(record.id), startedAt = record.startedAt?.toString(),
+            currentPosition = record.position, totalExercises = total, hasPrevious = record.position > 1,
+            hasNext = record.position < total, planCompleted = planCompleted
         )
     }
 
@@ -140,10 +190,49 @@ class ExerciseService(
         requireSpecialist(authorized)
         val state = stateFor(authorized)
         return SpecialistExerciseDto(
-            exercise = state.exercise ?: getExercise("sound-r-rocket"),
-            correctOptionId = state.correctOptionId ?: "rocket"
+            exercise = checkNotNull(state.exercise), correctOptionId = checkNotNull(state.correctOptionId)
         )
     }
+
+    suspend fun summary(authorized: AuthorizedSession): SessionSummaryResponse {
+        requireSpecialist(authorized)
+        ensureDefaultExercisePlan(authorized.session.id)
+        val plan = exercises.findSessionExercises(authorized.session.id)
+        if (plan.size != defaultPlan.size || plan.any { it.status != ExerciseStatus.COMPLETED }) {
+            throw ApiException.planNotCompleted()
+        }
+        val items = plan.sortedBy { it.position }.map { record ->
+            val definition = exercises.findExercise(record.exerciseId) ?: throw ApiException.notFound("Упражнение не найдено")
+            val attempts = exercises.findAttempts(record.id)
+            val correct = attempts.firstOrNull { it.isCorrect } ?: throw ApiException.planNotCompleted()
+            ExerciseSummaryItemDto(
+                position = record.position, exerciseId = record.exerciseId, instructionText = definition.instructionText,
+                correctOptionLabel = definition.options.first { it.id == definition.correctOptionId }.label,
+                attemptCount = attempts.size, incorrectAttempts = attempts.count { !it.isCorrect },
+                firstAttemptCorrect = attempts.firstOrNull()?.isCorrect == true,
+                timeToCorrectMs = correct.responseTimeMs,
+                startedAt = checkNotNull(record.startedAt).toString(), completedAt = checkNotNull(record.completedAt).toString()
+            )
+        }
+        val totalAttempts = items.sumOf { it.attemptCount }
+        val firstCorrect = items.count { it.firstAttemptCorrect }
+        val started = items.minOf { java.time.Instant.parse(it.startedAt) }
+        val completed = items.maxOf { java.time.Instant.parse(it.completedAt) }
+        return SessionSummaryResponse(
+            sessionId = authorized.session.id.toString(), childName = authorized.session.childName,
+            completedExercises = items.size, totalExercises = defaultPlan.size, totalAttempts = totalAttempts,
+            incorrectAttempts = items.sumOf { it.incorrectAttempts }, firstAttemptCorrectCount = firstCorrect,
+            firstAttemptCorrectPercent = firstCorrect * 100 / defaultPlan.size,
+            activeDurationMs = Duration.between(started, completed).toMillis().coerceAtLeast(0),
+            startedAt = started.toString(), completedAt = completed.toString(), exercises = items
+        )
+    }
+
+    private suspend fun currentLocked(sessionId: UUID): SessionExerciseRecord =
+        exercises.findCurrentSessionExercise(sessionId) ?: throw ApiException.conflict("Текущее задание не найдено")
+
+    private suspend fun labelFor(exerciseId: String, optionId: String): String = exercises.findExercise(exerciseId)
+        ?.options?.firstOrNull { it.id == optionId }?.label ?: optionId
 
     private fun requireSpecialist(authorized: AuthorizedSession) {
         if (authorized.role != DeviceRole.SPECIALIST) throw ApiException.forbidden()

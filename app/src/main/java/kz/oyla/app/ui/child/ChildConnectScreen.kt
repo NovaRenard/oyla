@@ -3,24 +3,24 @@ package kz.oyla.app.ui.child
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -54,7 +54,6 @@ import androidx.compose.ui.unit.sp
 import kz.oyla.app.R
 import kz.oyla.app.ui.components.OylaBackground
 import kz.oyla.app.ui.components.OylaLogo
-import kz.oyla.app.ui.components.OylaPrimaryButton
 import kz.oyla.app.ui.theme.OylaNavy
 import kz.oyla.app.ui.theme.OylaOutline
 import kz.oyla.app.ui.theme.OylaTextMuted
@@ -68,6 +67,7 @@ fun ChildConnectScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     var code by rememberSaveable { mutableStateOf("") }
+    var lastAutoSubmittedCode by rememberSaveable { mutableStateOf<String?>(null) }
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
@@ -76,6 +76,16 @@ fun ChildConnectScreen(
         if (state.connectionSuccessId != null) {
             viewModel.consumeConnectionSuccess()
             onConnected()
+        }
+    }
+    LaunchedEffect(code) {
+        if (code.length < 4) {
+            lastAutoSubmittedCode = null
+        } else if (code != lastAutoSubmittedCode && !state.isLoading) {
+            lastAutoSubmittedCode = code
+            focusManager.clearFocus()
+            keyboardController?.hide()
+            viewModel.connect(code)
         }
     }
 
@@ -119,7 +129,9 @@ fun ChildConnectScreen(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth(0.60f)
-                    .padding(top = contentTopPadding)
+                    .fillMaxHeight()
+                    .verticalScroll(rememberScrollState())
+                    .padding(top = contentTopPadding, bottom = 24.dp)
             ) {
                 Text(
                     text = stringResource(R.string.child_connect_title),
@@ -153,18 +165,6 @@ fun ChildConnectScreen(
                         textAlign = TextAlign.Center
                     )
                 }
-                OylaPrimaryButton(
-                    text = stringResource(if (state.isLoading) R.string.connecting else R.string.connect),
-                    icon = Icons.Outlined.Link,
-                    iconDescription = stringResource(R.string.content_description_connect),
-                    enabled = code.length == 4 && !state.isLoading,
-                    onClick = { viewModel.connect(code) },
-                    textSize = 25.sp,
-                    minHeight = 88.dp,
-                    modifier = Modifier
-                        .fillMaxWidth(0.88f)
-                        .padding(top = 16.dp)
-                )
                 if (state.isLoading) {
                     CircularProgressIndicator(color = OylaNavy)
                 }
@@ -203,7 +203,6 @@ private fun CodeInput(
             enabled = enabled,
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-            keyboardActions = KeyboardActions(onDone = { keyboardController() }),
             modifier = Modifier
                 .size(1.dp)
                 .alpha(0f)

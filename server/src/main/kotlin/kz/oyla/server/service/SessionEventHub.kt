@@ -14,6 +14,8 @@ import kz.oyla.server.model.dto.ExerciseStartedEvent
 import kz.oyla.server.model.dto.AnswerExerciseResponse
 import kz.oyla.server.model.dto.AnswerReceivedEvent
 import kz.oyla.server.model.dto.ExerciseStateResponse
+import kz.oyla.server.model.dto.ExerciseChangedEvent
+import kz.oyla.server.model.dto.ExercisePlanCompletedEvent
 import kz.oyla.server.model.dto.SessionCancelledEvent
 import kz.oyla.server.model.dto.SessionCompletedEvent
 
@@ -57,7 +59,8 @@ class SessionEventHub(private val json: Json) {
         val exercise = state.exercise ?: return
         val event = ExerciseShownEvent(
             sessionId = sessionId.toString(), sessionExerciseId = checkNotNull(state.sessionExerciseId),
-            exercise = exercise, exerciseStatus = state.exerciseStatus
+            exercise = exercise, exerciseStatus = state.exerciseStatus,
+            currentPosition = state.currentPosition, totalExercises = state.totalExercises
         )
         publishToRole(sessionId, DeviceRole.CHILD, json.encodeToString(event))
         publishToRole(sessionId, DeviceRole.SPECIALIST, json.encodeToString(event.copy(correctOptionId = state.correctOptionId)))
@@ -66,7 +69,8 @@ class SessionEventHub(private val json: Json) {
     suspend fun publishExerciseStarted(sessionId: UUID, state: ExerciseStateResponse) {
         val event = ExerciseStartedEvent(
             sessionId = sessionId.toString(), sessionExerciseId = checkNotNull(state.sessionExerciseId),
-            exerciseStatus = state.exerciseStatus, startedAt = checkNotNull(state.startedAt)
+            exerciseStatus = state.exerciseStatus, startedAt = checkNotNull(state.startedAt),
+            currentPosition = state.currentPosition, totalExercises = state.totalExercises
         )
         publishToAll(sessionId, json.encodeToString(event))
     }
@@ -86,6 +90,26 @@ class SessionEventHub(private val json: Json) {
                 responseTimeMs = answer.responseTimeMs, exerciseStatus = answer.exerciseStatus
             )))
         }
+    }
+
+    suspend fun publishExerciseChanged(sessionId: UUID, specialistState: ExerciseStateResponse) {
+        val event = ExerciseChangedEvent(
+            sessionId = sessionId.toString(), sessionExerciseId = checkNotNull(specialistState.sessionExerciseId),
+            exerciseStatus = specialistState.exerciseStatus, exercise = specialistState.exercise,
+            correctOptionId = specialistState.correctOptionId, currentPosition = specialistState.currentPosition,
+            totalExercises = specialistState.totalExercises, attemptCount = specialistState.attemptCount,
+            latestAnswer = specialistState.latestAnswer, startedAt = specialistState.startedAt,
+            planCompleted = specialistState.planCompleted
+        )
+        publishToRole(sessionId, DeviceRole.SPECIALIST, json.encodeToString(event))
+        publishToRole(sessionId, DeviceRole.CHILD, json.encodeToString(event.copy(exercise = null, correctOptionId = null)))
+    }
+
+    suspend fun publishExercisePlanCompleted(sessionId: UUID, state: ExerciseStateResponse) {
+        publishToAll(sessionId, json.encodeToString(ExercisePlanCompletedEvent(
+            sessionId = sessionId.toString(), currentPosition = state.currentPosition,
+            totalExercises = state.totalExercises, planCompleted = true
+        )))
     }
 
     private suspend fun publishToRole(sessionId: UUID, role: DeviceRole, payload: String) {

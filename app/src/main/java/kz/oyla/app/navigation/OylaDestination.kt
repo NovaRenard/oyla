@@ -12,5 +12,6 @@ enum class OylaDestination(val route: String) {
     SPECIALIST_WAITING("specialist_waiting"),
     CHILD_WAITING("child_waiting"),
     SPECIALIST_EXERCISE("specialist_exercise"),
+    SPECIALIST_SUMMARY("specialist_summary"),
     CHILD_EXERCISE("child_exercise")
 }

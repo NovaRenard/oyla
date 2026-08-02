@@ -3,6 +3,7 @@ package kz.oyla.app.ui.session
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -19,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material.icons.outlined.VolumeUp
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -29,6 +31,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -42,13 +53,26 @@ import kz.oyla.app.ui.components.OylaLogo
 import kz.oyla.app.ui.theme.OylaBlue
 import kz.oyla.app.ui.theme.OylaNavy
 import kz.oyla.app.ui.theme.OylaTextMuted
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.withFrameNanos
 
 @Composable
-fun ChildExerciseScreen(viewModel: ChildSessionViewModel) {
+fun ChildExerciseScreen(
+    viewModel: ChildSessionViewModel,
+    onOpenSettings: () -> Unit,
+    onSessionEnded: () -> Unit
+) {
     val state by viewModel.uiState.collectAsState()
     val exerciseState = state.exercise
     val audio = rememberExerciseAudioPlayer()
     LaunchedEffect(Unit) { viewModel.restoreActiveSession() }
+    LaunchedEffect(state.sessionEndedId) {
+        if (state.sessionEndedId != null) {
+            viewModel.consumeSessionEnd()
+            onSessionEnded()
+        }
+    }
     LaunchedEffect(exerciseState.playInstructionRequest) {
         if (exerciseState.playInstructionRequest > 0) {
             exerciseState.exercise?.let { audio.play(it.audioAssetKey, it.instructionText) }
@@ -68,7 +92,14 @@ fun ChildExerciseScreen(viewModel: ChildSessionViewModel) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 OylaLogo(Modifier.width(screenWidth * .13f))
                 Spacer(Modifier.weight(1f))
+                Text(
+                    "Задание ${exerciseState.currentPosition} из ${exerciseState.totalExercises}",
+                    color = OylaNavy, fontWeight = FontWeight.Bold, fontSize = 20.sp
+                )
+                Spacer(Modifier.width(16.dp))
                 ChildStatusPill(exerciseState.exerciseStatus)
+                Spacer(Modifier.width(12.dp))
+                HoldToOpenSettingsButton(onOpenSettings = onOpenSettings)
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
                 Card(
@@ -76,7 +107,11 @@ fun ChildExerciseScreen(viewModel: ChildSessionViewModel) {
                     modifier = Modifier.weight(1f, fill = false).width(screenWidth * .51f)
                 ) {
                     Text(
-                        text = exerciseState.exercise?.instructionText ?: "Задание загружается…",
+                        text = when {
+                            exerciseState.planCompleted -> "Все задания выполнены!"
+                            exerciseState.exerciseStatus == ExerciseUiStatus.PENDING -> "Следующее задание готовится"
+                            else -> exerciseState.exercise?.instructionText ?: "Задание загружается…"
+                        },
                         color = OylaNavy, fontWeight = FontWeight.Bold, fontSize = 31.sp,
                         textAlign = TextAlign.Center, lineHeight = 39.sp,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 34.dp, vertical = 25.dp)
@@ -104,6 +139,13 @@ fun ChildExerciseScreen(viewModel: ChildSessionViewModel) {
                     pendingOptionId = exerciseState.pendingOptionId,
                     onOptionClick = viewModel::submitAnswer
                 )
+            } else {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth(.59f).weight(1f)) {
+                    Text(
+                        if (exerciseState.planCompleted) "Отличная работа!" else "Жди, пока специалист покажет задание",
+                        color = OylaTextMuted, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center
+                    )
+                }
             }
             AnimatedVisibility(exerciseState.feedbackMessage != null) {
                 Text(
@@ -116,12 +158,74 @@ fun ChildExerciseScreen(viewModel: ChildSessionViewModel) {
                 Icon(Icons.Outlined.TouchApp, null, tint = OylaBlue)
                 Spacer(Modifier.width(12.dp))
                 Text(
-                    if (exerciseState.exerciseStatus == ExerciseUiStatus.SHOWN) "Жди команды специалиста" else "Нажми на картинку",
+                    when {
+                        exerciseState.planCompleted -> "Жди завершения занятия"
+                        exerciseState.exerciseStatus == ExerciseUiStatus.PENDING -> "Следующее задание готовится"
+                        exerciseState.exerciseStatus == ExerciseUiStatus.SHOWN -> "Жди команды специалиста"
+                        exerciseState.exerciseStatus == ExerciseUiStatus.COMPLETED -> "Жди следующее задание"
+                        else -> "Нажми на картинку"
+                    },
                     color = OylaBlue, fontSize = 21.sp, fontWeight = FontWeight.Medium
                 )
             }
             exerciseState.errorMessage?.let { Text(it, color = Color(0xFFD35A45), fontSize = 15.sp) }
         }
+    }
+}
+
+@Composable
+private fun HoldToOpenSettingsButton(onOpenSettings: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var progress by remember { mutableFloatStateOf(0f) }
+    var holdJob by remember { mutableStateOf<Job?>(null) }
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .height(56.dp)
+            .width(56.dp)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        holdJob?.cancel()
+                        progress = 0f
+                        holdJob = scope.launch {
+                            val holdDurationNanos = 3_000_000_000L
+                            val startedAt = withFrameNanos { it }
+                            while (progress < 1f) {
+                                val now = withFrameNanos { it }
+                                progress = ((now - startedAt).toFloat() / holdDurationNanos).coerceIn(0f, 1f)
+                            }
+                            onOpenSettings()
+                        }
+                        tryAwaitRelease()
+                        holdJob?.cancel()
+                        progress = 0f
+                    }
+                )
+            }
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawArc(
+                color = OylaTextMuted.copy(alpha = .35f),
+                startAngle = -90f,
+                sweepAngle = 360f,
+                useCenter = false,
+                style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round)
+            )
+            drawArc(
+                color = OylaBlue,
+                startAngle = -90f,
+                sweepAngle = progress * 360f,
+                useCenter = false,
+                style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round)
+            )
+        }
+        Icon(
+            imageVector = Icons.Outlined.Settings,
+            contentDescription = "Удерживайте 3 секунды, чтобы открыть настройки",
+            tint = OylaNavy
+        )
     }
 }
 

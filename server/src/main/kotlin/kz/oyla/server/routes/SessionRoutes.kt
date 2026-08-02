@@ -13,6 +13,7 @@ import kz.oyla.server.model.dto.CreateSessionRequest
 import kz.oyla.server.model.dto.ShowExerciseRequest
 import kz.oyla.server.model.dto.StartExerciseRequest
 import kz.oyla.server.model.dto.AnswerExerciseRequest
+import kz.oyla.server.model.dto.NextExerciseRequest
 import kz.oyla.server.service.SessionEventHub
 import kz.oyla.server.service.ExerciseService
 import kz.oyla.server.service.SessionService
@@ -21,6 +22,7 @@ fun Route.sessionRoutes(service: SessionService, exercises: ExerciseService, eve
     route("/api/v1/sessions") {
         post {
             val result = service.create(call.receive<CreateSessionRequest>())
+            exercises.ensureDefaultExercisePlan(java.util.UUID.fromString(result.sessionId))
             call.respond(HttpStatusCode.Created, result)
         }
         post("/connect") {
@@ -58,6 +60,10 @@ fun Route.sessionRoutes(service: SessionService, exercises: ExerciseService, eve
             val authorized = service.authorize(call.parameters["sessionId"].orEmpty(), call.bearerToken())
             call.respond(exercises.specialistExercise(authorized))
         }
+        get("/{sessionId}/summary") {
+            val authorized = service.authorize(call.parameters["sessionId"].orEmpty(), call.bearerToken())
+            call.respond(exercises.summary(authorized))
+        }
         post("/{sessionId}/exercise/show") {
             val authorized = service.authorize(call.parameters["sessionId"].orEmpty(), call.bearerToken())
             val result = exercises.show(authorized, call.receive<ShowExerciseRequest>())
@@ -74,6 +80,16 @@ fun Route.sessionRoutes(service: SessionService, exercises: ExerciseService, eve
             val authorized = service.authorize(call.parameters["sessionId"].orEmpty(), call.bearerToken())
             val result = exercises.answer(authorized, call.receive<AnswerExerciseRequest>())
             eventHub.publishAnswer(authorized.session.id, result)
+            if (result.isCorrect) {
+                val state = exercises.stateFor(authorized)
+                if (state.planCompleted) eventHub.publishExercisePlanCompleted(authorized.session.id, state)
+            }
+            call.respond(result)
+        }
+        post("/{sessionId}/exercise/next") {
+            val authorized = service.authorize(call.parameters["sessionId"].orEmpty(), call.bearerToken())
+            val result = exercises.next(authorized, call.receive<NextExerciseRequest>())
+            eventHub.publishExerciseChanged(authorized.session.id, result)
             call.respond(result)
         }
     }

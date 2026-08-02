@@ -30,7 +30,9 @@ data class SessionExerciseRecord(
     val shownAt: Instant?,
     val startedAt: Instant?,
     val completedAt: Instant?,
-    val createdAt: Instant
+    val createdAt: Instant,
+    val position: Int,
+    val isCurrent: Boolean
 )
 
 data class ExerciseAttemptRecord(
@@ -46,11 +48,18 @@ data class ExerciseAttemptRecord(
 
 interface ExerciseRepository {
     suspend fun findExercise(id: String): ExerciseRecord?
-    suspend fun findSessionExercise(sessionId: UUID): SessionExerciseRecord?
-    suspend fun createSessionExercise(record: SessionExerciseRecord): Boolean
+    suspend fun findSessionExercises(sessionId: UUID): List<SessionExerciseRecord>
+    suspend fun findCurrentSessionExercise(sessionId: UUID): SessionExerciseRecord?
+    suspend fun findSessionExerciseById(id: UUID): SessionExerciseRecord?
+    suspend fun findSessionExerciseByPosition(sessionId: UUID, position: Int): SessionExerciseRecord?
+    suspend fun createSessionExercises(records: List<SessionExerciseRecord>): Int
     suspend fun updateSessionExercise(record: SessionExerciseRecord): Boolean
+    suspend fun setCurrentExercise(sessionId: UUID, sessionExerciseId: UUID): Boolean
+    suspend fun countSessionExercises(sessionId: UUID): Int
+    suspend fun countCompletedSessionExercises(sessionId: UUID): Int
     suspend fun findAttemptByClientEventId(clientEventId: UUID): ExerciseAttemptRecord?
     suspend fun findLatestAttempt(sessionExerciseId: UUID): ExerciseAttemptRecord?
+    suspend fun findAttempts(sessionExerciseId: UUID): List<ExerciseAttemptRecord>
     suspend fun countAttempts(sessionExerciseId: UUID): Int
     suspend fun createAttempt(record: ExerciseAttemptRecord): Boolean
 }

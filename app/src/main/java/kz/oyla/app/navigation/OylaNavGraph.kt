@@ -31,6 +31,7 @@ import kz.oyla.app.ui.session.SpecialistSessionViewModelFactory
 import kz.oyla.app.ui.session.SpecialistWaitingScreen
 import kz.oyla.app.ui.session.SpecialistExerciseScreen
 import kz.oyla.app.ui.session.ChildExerciseScreen
+import kz.oyla.app.ui.session.SpecialistSummaryScreen
 
 @Composable
 fun OylaNavGraph(
@@ -162,6 +163,9 @@ fun OylaNavGraph(
                     onOpenExercise = {
                         navController.navigate(OylaDestination.SPECIALIST_EXERCISE.route) { launchSingleTop = true }
                     },
+                    onOpenSummary = {
+                        navController.navigate(OylaDestination.SPECIALIST_SUMMARY.route) { launchSingleTop = true }
+                    },
                     onCancelled = {
                         navController.navigate(OylaDestination.SPECIALIST_HOME.route) {
                             popUpTo(OylaDestination.SPECIALIST_HOME.route) { inclusive = false }
@@ -175,6 +179,12 @@ fun OylaNavGraph(
                     viewModel = childViewModel,
                     onExerciseShown = {
                         navController.navigate(OylaDestination.CHILD_EXERCISE.route) { launchSingleTop = true }
+                    },
+                    onCancelled = {
+                        navController.navigate(OylaDestination.CHILD_CONNECT.route) {
+                            popUpTo(OylaDestination.CHILD_CONNECT.route) { inclusive = false }
+                            launchSingleTop = true
+                        }
                     }
                 )
             }
@@ -186,11 +196,34 @@ fun OylaNavGraph(
                             popUpTo(OylaDestination.SPECIALIST_HOME.route) { inclusive = false }
                             launchSingleTop = true
                         }
+                    },
+                    onOpenSummary = {
+                        navController.navigate(OylaDestination.SPECIALIST_SUMMARY.route) { launchSingleTop = true }
+                    }
+                )
+            }
+            composable(OylaDestination.SPECIALIST_SUMMARY.route) {
+                SpecialistSummaryScreen(
+                    viewModel = specialistViewModel,
+                    onCompleted = {
+                        navController.navigate(OylaDestination.SPECIALIST_HOME.route) {
+                            popUpTo(OylaDestination.SPECIALIST_HOME.route) { inclusive = false }
+                            launchSingleTop = true
+                        }
                     }
                 )
             }
             composable(OylaDestination.CHILD_EXERCISE.route) {
-                ChildExerciseScreen(viewModel = childViewModel)
+                ChildExerciseScreen(
+                    viewModel = childViewModel,
+                    onOpenSettings = { navController.navigate(OylaDestination.CHILD_SETTINGS.route) },
+                    onSessionEnded = {
+                        navController.navigate(OylaDestination.CHILD_CONNECT.route) {
+                            popUpTo(OylaDestination.CHILD_CONNECT.route) { inclusive = false }
+                            launchSingleTop = true
+                        }
+                    }
+                )
             }
         }
     }

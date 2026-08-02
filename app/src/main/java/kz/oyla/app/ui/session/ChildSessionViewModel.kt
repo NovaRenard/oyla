@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 import kz.oyla.app.data.remote.OylaWebSocketClient
 import kz.oyla.app.data.remote.SocketConnectionState
 import kz.oyla.app.data.remote.SocketEvent
+import kz.oyla.app.data.remote.dto.SessionWebSocketEvent
 import kz.oyla.app.data.session.ExerciseActionResult
 import kz.oyla.app.data.session.SessionActionResult
 import kz.oyla.app.data.session.SessionDetails
@@ -26,6 +27,7 @@ data class ChildSessionUiState(
     val errorMessage: String? = null,
     val socketState: SocketConnectionState = SocketConnectionState.DISCONNECTED,
     val connectionSuccessId: String? = null,
+    val sessionEndedId: String? = null,
     val exercise: ExerciseUiState = ExerciseUiState()
 )
 
@@ -69,6 +71,7 @@ class ChildSessionViewModel(
                         exercise = _uiState.value.exercise.copy(sessionId = session.sessionId, childName = session.childName)
                     )
                     observeSocket(session)
+                    loadCurrentExercise()
                 }
                 is SessionActionResult.Failure -> _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = result.error.message)
                 null -> _uiState.value = _uiState.value.copy(isLoading = false)
@@ -77,6 +80,20 @@ class ChildSessionViewModel(
     }
 
     fun consumeConnectionSuccess() { _uiState.value = _uiState.value.copy(connectionSuccessId = null) }
+    fun consumeSessionEnd() { _uiState.value = _uiState.value.copy(sessionEndedId = null) }
+
+    fun cancelSession(onCancelled: () -> Unit) {
+        if (_uiState.value.isLoading) return
+        _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+        viewModelScope.launch {
+            when (val result = repository.cancelActiveSession()) {
+                is SessionActionResult.Success -> {
+                    socketJob?.cancel(); timerJob?.cancel(); _uiState.value = ChildSessionUiState(); onCancelled()
+                }
+                is SessionActionResult.Failure -> _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = result.error.message)
+            }
+        }
+    }
 
     fun submitAnswer(optionId: String) {
         val state = _uiState.value
@@ -90,29 +107,42 @@ class ChildSessionViewModel(
                 is ExerciseActionResult.Success -> {
                     val answer = result.value.toUi()
                     setExercise {
+                        val completed = result.value.exerciseStatus == "COMPLETED"
                         it.copy(
                             latestAnswer = answer, attemptCount = answer.attemptNumber,
                             exerciseStatus = result.value.exerciseStatus.toExerciseUiStatus(),
-                            isAnswerPending = !answer.isCorrect,
-                            pendingOptionId = if (answer.isCorrect) null else optionId,
-                            feedbackMessage = if (answer.isCorrect) "Отлично!" else "Попробуй ещё раз"
+                            isAnswerPending = !answer.isCorrect, pendingOptionId = if (answer.isCorrect) null else optionId,
+                            feedbackMessage = when {
+                                !answer.isCorrect -> "Попробуй ещё раз"
+                                completed && it.currentPosition == it.totalExercises -> "Все задания выполнены!\nОтличная работа!"
+                                completed -> "Отлично! Жди следующее задание"
+                                else -> null
+                            }
                         )
                     }
                     if (answer.isCorrect) timerJob?.cancel() else {
-                        delay(850)
-                        answerSubmissionGuard.release()
+                        delay(850); answerSubmissionGuard.release()
                         setExercise { it.copy(isAnswerPending = false, pendingOptionId = null) }
                     }
                 }
                 is ExerciseActionResult.Failure -> setExercise {
-                    answerSubmissionGuard.release()
-                    it.copy(isAnswerPending = false, pendingOptionId = null, errorMessage = result.message)
+                    answerSubmissionGuard.release(); it.copy(isAnswerPending = false, pendingOptionId = null, errorMessage = result.message)
                 }
             }
         }
     }
 
     fun repeatInstruction() { setExercise { it.copy(playInstructionRequest = it.playInstructionRequest + 1) } }
+
+    private fun loadCurrentExercise() {
+        val session = _uiState.value.session ?: return
+        viewModelScope.launch {
+            when (val result = repository.getExerciseState(session)) {
+                is ExerciseActionResult.Success -> applyStateSnapshot(result.value)
+                is ExerciseActionResult.Failure -> setExercise { it.copy(errorMessage = result.message) }
+            }
+        }
+    }
 
     private fun observeSocket(session: SessionDetails) {
         socketJob?.cancel()
@@ -129,39 +159,73 @@ class ChildSessionViewModel(
         }
     }
 
-    private fun handleServerEvent(session: SessionDetails, event: kz.oyla.app.data.remote.dto.SessionWebSocketEvent) {
+    private fun handleServerEvent(session: SessionDetails, event: SessionWebSocketEvent) {
         when (event.type) {
             "STATE_SNAPSHOT", "CHILD_CONNECTED" -> {
                 val current = _uiState.value.session ?: session
                 _uiState.value = _uiState.value.copy(session = current.copy(
                     status = event.status ?: current.status, childConnected = event.childConnected ?: current.childConnected
                 ))
-                if (event.exercise != null || event.sessionExerciseId != null) applyExerciseEvent(event, false)
+                if (event.type == "STATE_SNAPSHOT" && event.sessionExerciseId != null) applyExerciseEvent(event, reset = true)
             }
-            "EXERCISE_SHOWN" -> applyExerciseEvent(event, false)
-            "EXERCISE_STARTED" -> applyExerciseEvent(event, true)
-            "ANSWER_RECEIVED", "EXERCISE_COMPLETED" -> applyExerciseEvent(event, false)
+            "EXERCISE_CHANGED" -> {
+                answerSubmissionGuard.release()
+                applyExerciseEvent(event, reset = true)
+            }
+            "EXERCISE_SHOWN" -> applyExerciseEvent(event)
+            "EXERCISE_STARTED" -> applyExerciseEvent(event, requestAudio = true)
+            "ANSWER_RECEIVED", "EXERCISE_COMPLETED" -> applyExerciseEvent(event)
+            "EXERCISE_PLAN_COMPLETED" -> setExercise { it.copy(
+                planCompleted = true, feedbackMessage = "Все задания выполнены!\nОтличная работа!", isAnswerPending = false, pendingOptionId = null
+            ) }
             "SESSION_CANCELLED", "SESSION_COMPLETED" -> {
-                _uiState.value = _uiState.value.copy(errorMessage = "Занятие завершено")
+                socketJob?.cancel(); timerJob?.cancel()
+                _uiState.value = _uiState.value.copy(errorMessage = "Занятие завершено", sessionEndedId = event.sessionId)
                 viewModelScope.launch { repository.clearActiveSession() }
             }
         }
     }
 
-    private fun applyExerciseEvent(event: kz.oyla.app.data.remote.dto.SessionWebSocketEvent, requestAudio: Boolean) {
-        setExercise { old ->
-            val answer = event.latestAnswer?.toUi() ?: if (event.selectedOptionId != null && event.isCorrect != null) {
-                AnswerUiModel(event.selectedOptionId, event.selectedOptionLabel.orEmpty(), event.isCorrect,
-                    event.attemptNumber ?: old.attemptCount + 1, event.responseTimeMs ?: 0)
-            } else old.latestAnswer
-            old.copy(
-                sessionExerciseId = event.sessionExerciseId ?: old.sessionExerciseId,
-                exercise = event.exercise?.toUi() ?: old.exercise,
-                exerciseStatus = (event.exerciseStatus ?: old.exerciseStatus.name).toExerciseUiStatus(),
-                latestAnswer = answer, attemptCount = event.attemptCount ?: event.attemptNumber ?: old.attemptCount,
-                startedAt = event.startedAt ?: old.startedAt,
-                feedbackMessage = if (event.type == "EXERCISE_COMPLETED") "Отлично!" else old.feedbackMessage,
-                playInstructionRequest = old.playInstructionRequest + if (requestAudio) 1 else 0
+    private fun applyStateSnapshot(state: kz.oyla.app.data.remote.dto.ExerciseStateResponse) {
+        val old = _uiState.value.exercise
+        setExercise { state.toUiState(old.sessionId, old.childName, old.connectionState) }
+        state.startedAt?.takeIf { state.exerciseStatus == "RUNNING" }?.let(::startElapsedTicker)
+        if (state.exerciseStatus == "COMPLETED") timerJob?.cancel()
+    }
+
+    private fun applyExerciseEvent(event: SessionWebSocketEvent, requestAudio: Boolean = false, reset: Boolean = false) {
+        val old = _uiState.value.exercise
+        val base = if (reset) old.resetForExerciseChange(
+            newSessionExerciseId = event.sessionExerciseId,
+            newExercise = event.exercise?.toUi(),
+            newStatus = (event.exerciseStatus ?: "PENDING").toExerciseUiStatus(),
+            newPosition = event.currentPosition ?: old.currentPosition,
+            newTotal = event.totalExercises ?: old.totalExercises,
+            newHasNext = event.hasNext ?: ((event.currentPosition ?: old.currentPosition) < (event.totalExercises ?: old.totalExercises)),
+            newPlanCompleted = event.planCompleted ?: false
+        ) else old
+        val answer = event.latestAnswer?.toUi() ?: if (event.selectedOptionId != null && event.isCorrect != null) {
+            AnswerUiModel(event.selectedOptionId, event.selectedOptionLabel.orEmpty(), event.isCorrect,
+                event.attemptNumber ?: base.attemptCount + 1, event.responseTimeMs ?: 0)
+        } else base.latestAnswer
+        val completedFeedback = if (event.type == "EXERCISE_COMPLETED") {
+            if ((event.currentPosition ?: base.currentPosition) == (event.totalExercises ?: base.totalExercises)) {
+                "Все задания выполнены!\nОтличная работа!"
+            } else "Отлично! Жди следующее задание"
+        } else base.feedbackMessage
+        setExercise {
+            base.copy(
+                sessionExerciseId = event.sessionExerciseId ?: base.sessionExerciseId,
+                exercise = event.exercise?.toUi() ?: base.exercise,
+                exerciseStatus = (event.exerciseStatus ?: base.exerciseStatus.name).toExerciseUiStatus(),
+                latestAnswer = answer, attemptCount = event.attemptCount ?: event.attemptNumber ?: base.attemptCount,
+                startedAt = event.startedAt ?: base.startedAt,
+                currentPosition = event.currentPosition ?: base.currentPosition,
+                totalExercises = event.totalExercises ?: base.totalExercises,
+                hasNext = event.hasNext ?: base.hasNext,
+                planCompleted = event.planCompleted ?: base.planCompleted,
+                feedbackMessage = completedFeedback,
+                playInstructionRequest = base.playInstructionRequest + if (requestAudio) 1 else 0
             )
         }
         event.startedAt?.let(::startElapsedTicker)
@@ -182,7 +246,6 @@ class ChildSessionViewModel(
     private fun setExercise(update: (ExerciseUiState) -> ExerciseUiState) {
         _uiState.value = _uiState.value.copy(exercise = update(_uiState.value.exercise))
     }
-
     override fun onCleared() { socketJob?.cancel(); timerJob?.cancel(); super.onCleared() }
 }
 

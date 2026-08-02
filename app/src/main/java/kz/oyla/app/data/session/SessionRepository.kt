@@ -18,6 +18,8 @@ import kz.oyla.app.data.remote.dto.StartExerciseRequest
 import kz.oyla.app.data.remote.dto.StartExerciseResponse
 import kz.oyla.app.data.remote.dto.AnswerExerciseRequest
 import kz.oyla.app.data.remote.dto.AnswerExerciseResponse
+import kz.oyla.app.data.remote.dto.NextExerciseRequest
+import kz.oyla.app.data.remote.dto.SessionSummaryResponse
 import kz.oyla.app.domain.model.DeviceRole
 
 data class SessionDetails(
@@ -134,6 +136,13 @@ class SessionRepository(
     ): ExerciseActionResult<AnswerExerciseResponse> =
         api.answerExercise(session.sessionId, session.token, AnswerExerciseRequest(sessionExerciseId, optionId, clientEventId))
             .toExerciseResult("Ответ не отправлен. Попробуйте ещё раз")
+
+    suspend fun nextExercise(session: SessionDetails, currentSessionExerciseId: String): ExerciseActionResult<ExerciseStateResponse> =
+        api.nextExercise(session.sessionId, session.token, NextExerciseRequest(currentSessionExerciseId))
+            .toExerciseResult("Не удалось открыть следующее задание")
+
+    suspend fun getSummary(session: SessionDetails): ExerciseActionResult<SessionSummaryResponse> =
+        api.getSummary(session.sessionId, session.token).toExerciseResult("Не удалось загрузить итог занятия")
 
     suspend fun clearActiveSession() = storage.clearActiveSession()
 
