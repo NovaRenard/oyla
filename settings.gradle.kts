@@ -24,3 +24,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Oyla"
 include(":app")
+include(":server")

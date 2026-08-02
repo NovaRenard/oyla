@@ -23,6 +23,9 @@ import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.flow.first
 import kz.oyla.app.data.local.DevicePreferences
 import kz.oyla.app.data.local.DeviceSetup
+import kz.oyla.app.data.remote.OylaApiClient
+import kz.oyla.app.data.remote.OylaWebSocketClient
+import kz.oyla.app.data.session.SessionRepository
 import kz.oyla.app.domain.model.DeviceRole
 import kz.oyla.app.navigation.OylaDestination
 import kz.oyla.app.navigation.OylaNavGraph
@@ -65,20 +68,23 @@ private fun OylaApp(devicePreferences: DevicePreferences) {
     if (destination == null) {
         LoadingScreen()
     } else {
+        val apiClient = remember { OylaApiClient(BuildConfig.API_BASE_URL) }
+        val webSocketClient = remember { OylaWebSocketClient(BuildConfig.WS_BASE_URL) }
+        val sessionRepository = remember { SessionRepository(apiClient, devicePreferences) }
         OylaNavGraph(
             devicePreferences = devicePreferences,
-            startDestination = destination
+            startDestination = destination,
+            sessionRepository = sessionRepository,
+            webSocketClient = webSocketClient
         )
     }
 }
 
 private fun DeviceSetup.toStartDestination(): OylaDestination = when (role) {
     null -> OylaDestination.ROLE_SELECTION
-    DeviceRole.CHILD -> OylaDestination.CHILD_CONNECT
-    DeviceRole.SPECIALIST -> if (hasPin) {
-        OylaDestination.SPECIALIST_HOME
-    } else {
-        OylaDestination.CREATE_PIN
+    else -> if (!hasPin) OylaDestination.CREATE_PIN else when (role) {
+        DeviceRole.CHILD -> OylaDestination.CHILD_CONNECT
+        DeviceRole.SPECIALIST -> OylaDestination.SPECIALIST_HOME
     }
 }
 

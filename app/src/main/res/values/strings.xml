@@ -15,7 +15,6 @@
     <string name="specialist_subtitle">Начните новое занятие</string>
     <string name="new_lesson">Новое занятие</string>
     <string name="settings">Настройки</string>
-    <string name="new_lesson_coming_soon">Создание занятия будет добавлено на следующем этапе</string>
     <string name="settings_title">Настройки</string>
     <string name="current_mode">Текущий режим</string>
     <string name="current_mode_value">Режим: %1$s</string>
@@ -28,7 +27,6 @@
     <string name="child_connect_title">Подключение к занятию</string>
     <string name="child_connect_subtitle">Введи код, который дал специалист</string>
     <string name="connect">Подключиться</string>
-    <string name="connect_coming_soon">Подключение к серверу будет добавлено на следующем этапе</string>
     <string name="code_placeholder">—</string>
     <string name="content_description_logo">Логотип Oyla</string>
     <string name="content_description_settings">Открыть настройки</string>
@@ -40,4 +38,22 @@
     <string name="show_pin">Показать PIN-код</string>
     <string name="hide_pin">Скрыть PIN-код</string>
     <string name="loading">Загрузка…</string>
+    <string name="create_session_title">Новое занятие</string>
+    <string name="child_name_label">Имя ребёнка</string>
+    <string name="create_session_action">Создать занятие</string>
+    <string name="creating_session">Создаём занятие…</string>
+    <string name="create_session_hint">Код подключения появится на следующем экране</string>
+    <string name="connecting">Подключаемся…</string>
+    <string name="connection_code_title">Код подключения</string>
+    <string name="waiting_child">Ожидаем подключения ребёнка</string>
+    <string name="waiting_child_detail">Попросите ребёнка ввести этот код на своём планшете</string>
+    <string name="child_connected">Ребёнок подключён</string>
+    <string name="cancel_session">Отменить занятие</string>
+    <string name="go_to_tasks_later">Перейти к заданиям — следующий этап</string>
+    <string name="connecting_to_server">Подключаемся к серверу…</string>
+    <string name="connection_active">Соединение активно</string>
+    <string name="reconnecting">Соединение потеряно. Переподключаемся…</string>
+    <string name="connection_disconnected">Нет соединения с сервером</string>
+    <string name="child_ready_title">Всё готово!</string>
+    <string name="waiting_assignment">Ждём задание от специалиста</string>
 </resources>
