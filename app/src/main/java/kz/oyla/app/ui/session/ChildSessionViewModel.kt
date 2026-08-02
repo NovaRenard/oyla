@@ -53,6 +53,7 @@ class ChildSessionViewModel(
                         exercise = ExerciseUiState(sessionId = session.sessionId, childName = session.childName)
                     )
                     observeSocket(session)
+                    loadCurrentExercise()
                 }
                 is SessionActionResult.Failure -> _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = result.error.message)
             }
@@ -60,7 +61,11 @@ class ChildSessionViewModel(
     }
 
     fun restoreActiveSession() {
-        if (_uiState.value.isLoading || _uiState.value.session != null) return
+        if (_uiState.value.isLoading) return
+        if (_uiState.value.session != null) {
+            loadCurrentExercise()
+            return
+        }
         _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
         viewModelScope.launch {
             when (val result = repository.restoreActiveSession(DeviceRole.CHILD)) {

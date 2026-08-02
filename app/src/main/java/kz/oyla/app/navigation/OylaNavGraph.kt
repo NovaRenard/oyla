@@ -211,6 +211,9 @@ fun OylaNavGraph(
                     },
                     onOpenSummary = {
                         navController.navigate(OylaDestination.SPECIALIST_SUMMARY.route) { launchSingleTop = true }
+                    },
+                    onOpenSettings = {
+                        navController.navigate(OylaDestination.SPECIALIST_SETTINGS.route) { launchSingleTop = true }
                     }
                 )
             }

@@ -18,9 +18,11 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material.icons.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -66,6 +68,7 @@ fun ChildExerciseScreen(
     val state by viewModel.uiState.collectAsState()
     val exerciseState = state.exercise
     val audio = rememberExerciseAudioPlayer()
+    var showCancelConfirmation by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { viewModel.restoreActiveSession() }
     LaunchedEffect(state.sessionEndedId) {
         if (state.sessionEndedId != null) {
@@ -168,8 +171,32 @@ fun ChildExerciseScreen(
                     color = OylaBlue, fontSize = 21.sp, fontWeight = FontWeight.Medium
                 )
             }
+            Button(
+                onClick = { showCancelConfirmation = true },
+                enabled = !state.isLoading,
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFD35A45)),
+                modifier = Modifier.fillMaxWidth(.4f)
+            ) {
+                Icon(Icons.Outlined.Cancel, null)
+                Spacer(Modifier.width(8.dp))
+                Text("Отменить занятие", fontWeight = FontWeight.Bold)
+            }
             exerciseState.errorMessage?.let { Text(it, color = Color(0xFFD35A45), fontSize = 15.sp) }
         }
+    }
+    if (showCancelConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showCancelConfirmation = false },
+            title = { Text("Отменить занятие?") },
+            text = { Text("Занятие завершится на обоих устройствах.") },
+            confirmButton = {
+                Button(onClick = {
+                    showCancelConfirmation = false
+                    viewModel.cancelSession(onSessionEnded)
+                }) { Text("Отменить") }
+            },
+            dismissButton = { Button(onClick = { showCancelConfirmation = false }) { Text("Продолжить") } }
+        )
     }
 }
 

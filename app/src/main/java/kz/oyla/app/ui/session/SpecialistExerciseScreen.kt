@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -63,7 +64,8 @@ import kz.oyla.app.ui.theme.OylaTextMuted
 fun SpecialistExerciseScreen(
     viewModel: SpecialistSessionViewModel,
     onCompleted: () -> Unit,
-    onOpenSummary: () -> Unit
+    onOpenSummary: () -> Unit,
+    onOpenSettings: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
     val exercise = state.exercise
@@ -138,7 +140,14 @@ fun SpecialistExerciseScreen(
                 ConnectionStatusLine("Сервер", serverLabel(state.socketState), serverColor(state.socketState))
                 ConnectionStatusLine("Ребёнок", if (state.session?.childConnected == true) "подключён" else "ожидание подключения", if (state.session?.childConnected == true) Color(0xFF31B96A) else OylaTextMuted)
             }
-        }, confirmButton = { Button(onClick = { showConnectionSettings = false }) { Text("Закрыть") } }
+        },
+        confirmButton = { Button(onClick = { showConnectionSettings = false }) { Text("Закрыть") } },
+        dismissButton = {
+            Button(onClick = {
+                showConnectionSettings = false
+                onOpenSettings()
+            }) { Text("Настройки устройства") }
+        }
     )
 }
 
@@ -171,6 +180,10 @@ private fun ResultsPanel(
 ) {
     Card(shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(containerColor = Color.White.copy(.96f)), modifier = modifier) {
         Column(modifier = Modifier.fillMaxSize().padding(20.dp)) {
+            val commandButtonModifier = Modifier
+                .widthIn(max = 300.dp)
+                .fillMaxWidth()
+                .align(Alignment.CenterHorizontally)
             Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                 Text("Результаты в реальном времени", color = OylaNavy, fontSize = 19.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(12.dp))
@@ -185,11 +198,11 @@ private fun ResultsPanel(
             Spacer(Modifier.height(12.dp))
             when (exercise.exerciseStatus) {
                 ExerciseUiStatus.PENDING -> OylaPrimaryButton("Показать ребёнку", Icons.Outlined.Visibility, "Показать ребёнку", onShow,
-                    enabled = childConnected && socketState == SocketConnectionState.CONNECTED && !exercise.isCommandLoading, textSize = 16.sp, minHeight = 54.dp, modifier = Modifier.fillMaxWidth())
+                    enabled = childConnected && !exercise.isCommandLoading, textSize = 16.sp, minHeight = 54.dp, modifier = commandButtonModifier)
                 ExerciseUiStatus.SHOWN -> {
-                    OylaPrimaryButton("Показано ребёнку", Icons.Outlined.Visibility, "Показано ребёнку", {}, enabled = false, textSize = 16.sp, minHeight = 50.dp, modifier = Modifier.fillMaxWidth())
+                    OylaPrimaryButton("Показано ребёнку", Icons.Outlined.Visibility, "Показано ребёнку", {}, enabled = false, textSize = 16.sp, minHeight = 50.dp, modifier = commandButtonModifier)
                     Spacer(Modifier.height(8.dp))
-                    OylaPrimaryButton("Начать", Icons.Outlined.PlayArrow, "Начать", onStart, enabled = socketState == SocketConnectionState.CONNECTED && !exercise.isCommandLoading, textSize = 16.sp, minHeight = 54.dp, modifier = Modifier.fillMaxWidth())
+                    OylaPrimaryButton("Начать", Icons.Outlined.PlayArrow, "Начать", onStart, enabled = socketState == SocketConnectionState.CONNECTED && !exercise.isCommandLoading, textSize = 16.sp, minHeight = 54.dp, modifier = commandButtonModifier)
                 }
                 ExerciseUiStatus.RUNNING -> OylaPrimaryButton("Задание выполняется", Icons.Outlined.PlayArrow, "Задание выполняется", {}, enabled = false, textSize = 16.sp, minHeight = 54.dp, modifier = Modifier.fillMaxWidth())
                 ExerciseUiStatus.COMPLETED -> if (exercise.currentPosition < exercise.totalExercises) {

@@ -89,6 +89,20 @@ class SessionRoutesTest {
     }
 
     @Test
+    fun `child can cancel a connected session`() = withServer { _ ->
+        val created = createSessionBody()
+        val child = json.decodeFromString<ConnectSessionResponse>(
+            connect(created.connectionCode, "child-1").bodyAsText()
+        )
+
+        val response = client.post("/api/v1/sessions/${created.sessionId}/cancel") {
+            header(HttpHeaders.Authorization, "Bearer ${child.childToken}")
+        }
+
+        assertEquals(HttpStatusCode.NoContent, response.status)
+    }
+
+    @Test
     fun `invalid token cannot read session state`() = withServer { _ ->
         val created = createSessionBody()
         val response = client.get("/api/v1/sessions/${created.sessionId}") {
