@@ -20,7 +20,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -82,14 +81,16 @@ fun OylaPrimaryButton(
             disabledContainerColor = Color.Transparent,
             disabledContentColor = Color.White
         ),
+        elevation = ButtonDefaults.buttonElevation(
+            defaultElevation = 0.dp,
+            pressedElevation = 0.dp,
+            focusedElevation = 0.dp,
+            hoveredElevation = 0.dp,
+            disabledElevation = 0.dp
+        ),
         contentPadding = PaddingValues(0.dp),
         modifier = modifier
             .heightIn(min = minHeight)
-            .shadow(
-                elevation = if (enabled) 14.dp else 0.dp,
-                shape = shape,
-                spotColor = OylaNavy.copy(alpha = 0.32f)
-            )
             .semantics { contentDescription = text }
     ) {
         Box(

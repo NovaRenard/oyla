@@ -37,7 +37,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -113,7 +112,6 @@ fun ChildConnectScreen(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .size(72.dp)
-                    .shadow(4.dp, RoundedCornerShape(22.dp))
                     .background(Color.White, RoundedCornerShape(22.dp))
             ) {
                 Icon(
@@ -184,6 +182,12 @@ private fun CodeInput(
     onCodeChange: (String) -> Unit
 ) {
     val cellShape = RoundedCornerShape(22.dp)
+    LaunchedEffect(enabled) {
+        if (enabled) {
+            focusRequester.requestFocus()
+            keyboardController()
+        }
+    }
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
@@ -204,8 +208,8 @@ private fun CodeInput(
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
             modifier = Modifier
-                .size(1.dp)
-                .alpha(0f)
+                .fillMaxSize()
+                .alpha(0.01f)
                 .focusRequester(focusRequester)
         )
         Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {

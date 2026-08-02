@@ -84,6 +84,15 @@ fun OylaNavGraph(
                     }
                 }
             }
+            composable(OylaDestination.CHANGE_PIN.route) {
+                CreatePinScreen { pin ->
+                    devicePreferences.savePin(pin)
+                    navController.navigate(OylaDestination.SPECIALIST_SETTINGS.route) {
+                        popUpTo(OylaDestination.CHANGE_PIN.route) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                }
+            }
             composable(OylaDestination.SPECIALIST_HOME.route) {
                 SpecialistHomeScreen(
                     onNewLesson = {
@@ -100,6 +109,9 @@ fun OylaNavGraph(
                     onBack = { navController.popBackStack() },
                     onChangeMode = {
                         navController.navigate(OylaDestination.VERIFY_PIN.route)
+                    },
+                    onChangePin = {
+                        navController.navigate(OylaDestination.CHANGE_PIN.route)
                     }
                 )
             }

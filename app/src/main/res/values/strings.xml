@@ -19,6 +19,7 @@
     <string name="current_mode">Текущий режим</string>
     <string name="current_mode_value">Режим: %1$s</string>
     <string name="change_device_mode">Сменить режим устройства</string>
+    <string name="change_pin">Сменить PIN-код</string>
     <string name="verify_pin_title">Подтвердите PIN-код</string>
     <string name="verify_pin_subtitle">Введите PIN специалиста, чтобы сменить режим</string>
     <string name="verify_action">Подтвердить</string>

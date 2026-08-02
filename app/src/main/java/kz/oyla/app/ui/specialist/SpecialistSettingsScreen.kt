@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.SwapHoriz
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -35,7 +36,8 @@ import kz.oyla.app.ui.theme.OylaTextMuted
 fun SpecialistSettingsScreen(
     role: DeviceRole,
     onBack: () -> Unit,
-    onChangeMode: () -> Unit
+    onChangeMode: () -> Unit,
+    onChangePin: (() -> Unit)? = null
 ) {
     BackHandler(onBack = onBack)
     Box(
@@ -103,6 +105,19 @@ fun SpecialistSettingsScreen(
                     .fillMaxWidth()
                     .padding(top = 16.dp)
             )
+            if (role == DeviceRole.SPECIALIST && onChangePin != null) {
+                OylaPrimaryButton(
+                    text = stringResource(R.string.change_pin),
+                    icon = Icons.Outlined.Lock,
+                    iconDescription = stringResource(R.string.change_pin),
+                    onClick = onChangePin,
+                    textSize = 18.sp,
+                    minHeight = 52.dp,
+                    modifier = Modifier
+                        .widthIn(max = 390.dp)
+                        .fillMaxWidth()
+                )
+            }
         }
     }
 }
