@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -17,9 +16,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -62,8 +60,7 @@ fun SpecialistHomeScreen(
                 onClick = onOpenSettings,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .widthIn(min = 190.dp, max = 250.dp)
-                    .fillMaxWidth(0.18f)
+                    .size(72.dp)
             )
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -96,10 +93,11 @@ fun SpecialistHomeScreen(
                     icon = Icons.Outlined.Add,
                     iconDescription = stringResource(R.string.content_description_add),
                     onClick = onNewLesson,
+                    textSize = 28.sp,
+                    minHeight = 90.dp,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 126.dp)
-                        .padding(top = 26.dp)
+                        .padding(top = 16.dp)
                 )
             }
         }
@@ -109,34 +107,17 @@ fun SpecialistHomeScreen(
 @Composable
 private fun SpecialistSettingsButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     val shape = RoundedCornerShape(22.dp)
-    Button(
+    IconButton(
         onClick = onClick,
-        shape = shape,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = Color.White,
-            contentColor = OylaNavy
-        ),
-        elevation = ButtonDefaults.buttonElevation(defaultElevation = 7.dp),
         modifier = modifier
-            .heightIn(min = 72.dp)
             .shadow(4.dp, shape)
+            .background(Color.White, shape)
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.Settings,
-                contentDescription = stringResource(R.string.content_description_settings),
-                modifier = Modifier
-                    .size(32.dp)
-                    .padding(end = 8.dp)
-            )
-            Text(
-                text = stringResource(R.string.settings),
-                fontSize = 22.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-        }
+        Icon(
+            imageVector = Icons.Outlined.Settings,
+            contentDescription = stringResource(R.string.content_description_settings),
+            tint = OylaNavy,
+            modifier = Modifier.size(34.dp)
+        )
     }
 }

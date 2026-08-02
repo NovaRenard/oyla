@@ -37,5 +37,7 @@
     <string name="content_description_back">Назад</string>
     <string name="content_description_code_input">Поле ввода кода занятия</string>
     <string name="content_description_pin_input">Поле ввода PIN-кода</string>
+    <string name="show_pin">Показать PIN-код</string>
+    <string name="hide_pin">Скрыть PIN-код</string>
     <string name="loading">Загрузка…</string>
 </resources>

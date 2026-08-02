@@ -5,9 +5,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChildCare
@@ -48,40 +51,38 @@ fun RoleSelectionScreen(onRoleSelected: (DeviceRole) -> Unit) {
             )
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(22.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .widthIn(max = 580.dp)
-                    .fillMaxWidth(0.62f)
-                    .padding(vertical = 24.dp)
+                    .widthIn(max = 480.dp)
+                    .fillMaxWidth(0.58f)
+                    .fillMaxHeight(0.82f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(vertical = 12.dp)
             ) {
-                Text(
-                    text = stringResource(R.string.role_selection_logo),
-                    color = OylaNavy,
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold
-                )
                 Text(
                     text = stringResource(R.string.role_selection_title),
                     color = OylaNavy,
-                    fontSize = 34.sp,
+                    fontSize = 28.sp,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
-                    lineHeight = 42.sp
+                    lineHeight = 34.sp
                 )
                 OylaPrimaryButton(
                     text = stringResource(R.string.role_specialist),
                     icon = Icons.Outlined.Person,
                     iconDescription = stringResource(R.string.role_specialist),
                     onClick = { onRoleSelected(DeviceRole.SPECIALIST) },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    textSize = 24.sp
                 )
                 OylaPrimaryButton(
                     text = stringResource(R.string.role_child),
                     icon = Icons.Outlined.ChildCare,
                     iconDescription = stringResource(R.string.role_child),
                     onClick = { onRoleSelected(DeviceRole.CHILD) },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    textSize = 24.sp
                 )
             }
         }

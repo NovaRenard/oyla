@@ -89,6 +89,25 @@ fun OylaNavGraph(
                     }
                 )
             }
+            composable(OylaDestination.CHILD_SETTINGS.route) {
+                SpecialistSettingsScreen(
+                    role = DeviceRole.CHILD,
+                    onBack = { navController.popBackStack() },
+                    onChangeMode = {
+                        scope.launch {
+                            if (devicePreferences.hasPin()) {
+                                navController.navigate(OylaDestination.VERIFY_PIN.route)
+                            } else {
+                                devicePreferences.clearRole()
+                                navController.navigate(OylaDestination.ROLE_SELECTION.route) {
+                                    popUpTo(OylaDestination.CHILD_CONNECT.route) { inclusive = true }
+                                    launchSingleTop = true
+                                }
+                            }
+                        }
+                    }
+                )
+            }
             composable(OylaDestination.VERIFY_PIN.route) {
                 VerifyPinScreen(
                     getRemainingLockMillis = devicePreferences::remainingPinLockMillis,
@@ -96,7 +115,7 @@ fun OylaNavGraph(
                     onVerified = {
                         devicePreferences.clearRole()
                         navController.navigate(OylaDestination.ROLE_SELECTION.route) {
-                            popUpTo(OylaDestination.SPECIALIST_HOME.route) { inclusive = true }
+                            popUpTo(navController.graph.id) { inclusive = true }
                             launchSingleTop = true
                         }
                     }
@@ -106,6 +125,9 @@ fun OylaNavGraph(
                 ChildConnectScreen(
                     onConnect = {
                         scope.launch { snackbarHostState.showSnackbar(connectMessage) }
+                    },
+                    onOpenSettings = {
+                        navController.navigate(OylaDestination.CHILD_SETTINGS.route)
                     }
                 )
             }

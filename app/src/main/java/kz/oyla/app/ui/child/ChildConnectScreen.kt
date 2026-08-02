@@ -21,6 +21,9 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -31,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -53,10 +57,14 @@ import kz.oyla.app.ui.theme.OylaOutline
 import kz.oyla.app.ui.theme.OylaTextMuted
 
 @Composable
-fun ChildConnectScreen(onConnect: () -> Unit) {
+fun ChildConnectScreen(
+    onConnect: () -> Unit,
+    onOpenSettings: () -> Unit
+) {
     var code by rememberSaveable { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val codeDescription = stringResource(R.string.content_description_code_input)
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -68,12 +76,31 @@ fun ChildConnectScreen(onConnect: () -> Unit) {
                 .fillMaxSize()
                 .safeDrawingPadding()
                 .padding(horizontal = maxWidth * 0.04f, vertical = maxHeight * 0.045f)
+                .clickable {
+                    focusManager.clearFocus()
+                    keyboardController?.hide()
+                }
         ) {
             OylaLogo(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .fillMaxWidth(0.17f)
             )
+            IconButton(
+                onClick = onOpenSettings,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .size(72.dp)
+                    .shadow(4.dp, RoundedCornerShape(22.dp))
+                    .background(Color.White, RoundedCornerShape(22.dp))
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Settings,
+                    contentDescription = stringResource(R.string.content_description_settings),
+                    tint = OylaNavy,
+                    modifier = Modifier.size(34.dp)
+                )
+            }
             androidx.compose.foundation.layout.Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -111,9 +138,10 @@ fun ChildConnectScreen(onConnect: () -> Unit) {
                     iconDescription = stringResource(R.string.content_description_connect),
                     enabled = code.length == 4,
                     onClick = onConnect,
+                    textSize = 25.sp,
+                    minHeight = 88.dp,
                     modifier = Modifier
                         .fillMaxWidth(0.88f)
-                        .heightIn(min = 112.dp)
                         .padding(top = 16.dp)
                 )
             }

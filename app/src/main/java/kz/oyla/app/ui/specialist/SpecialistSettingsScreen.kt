@@ -96,6 +96,8 @@ fun SpecialistSettingsScreen(
                 icon = Icons.Outlined.SwapHoriz,
                 iconDescription = stringResource(R.string.change_device_mode),
                 onClick = onChangeMode,
+                textSize = 21.sp,
+                minHeight = 60.dp,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 16.dp)

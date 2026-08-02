@@ -5,6 +5,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
@@ -28,8 +29,11 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.Dp
 import kz.oyla.app.R
 import kz.oyla.app.ui.theme.OylaBlue
 import kz.oyla.app.ui.theme.OylaBlueDark
@@ -63,7 +67,9 @@ fun OylaPrimaryButton(
     iconDescription: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    textSize: TextUnit = 22.sp,
+    minHeight: Dp = 64.dp
 ) {
     val shape = RoundedCornerShape(28.dp)
     Button(
@@ -76,9 +82,9 @@ fun OylaPrimaryButton(
             disabledContainerColor = Color.Transparent,
             disabledContentColor = Color.White
         ),
-        contentPadding = ButtonDefaults.ContentPadding,
+        contentPadding = PaddingValues(0.dp),
         modifier = modifier
-            .heightIn(min = 72.dp)
+            .heightIn(min = minHeight)
             .shadow(
                 elevation = if (enabled) 14.dp else 0.dp,
                 shape = shape,
@@ -96,7 +102,7 @@ fun OylaPrimaryButton(
                     ),
                     shape = shape
                 )
-                .padding(horizontal = 28.dp, vertical = 14.dp)
+                .padding(horizontal = 20.dp, vertical = 12.dp)
         ) {
             Row(
                 horizontalArrangement = Arrangement.Center,
@@ -105,14 +111,17 @@ fun OylaPrimaryButton(
                 Icon(
                     imageVector = icon,
                     contentDescription = iconDescription,
-                    modifier = Modifier.padding(end = 18.dp)
+                    modifier = Modifier.padding(end = 12.dp)
                 )
                 Text(
                     text = text,
                     style = MaterialTheme.typography.titleLarge.copy(
-                        fontSize = 30.sp,
+                        fontSize = textSize,
                         fontWeight = FontWeight.Bold
-                    )
+                    ),
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
