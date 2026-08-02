@@ -1,0 +1,48 @@
+services:
+  oyla-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-oyla}
+      POSTGRES_USER: ${POSTGRES_USER:-oyla}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-before-production}
+    volumes:
+      - oyla-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - oyla-network
+
+  oyla-server:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: 8080
+      DATABASE_URL: jdbc:postgresql://oyla-db:5432/${POSTGRES_DB:-oyla}
+      DATABASE_USER: ${POSTGRES_USER:-oyla}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-change-me-before-production}
+      SESSION_CODE_TTL_MINUTES: ${SESSION_CODE_TTL_MINUTES:-30}
+    ports:
+      - "${OYLA_SERVER_PORT:-8083}:8080"
+    depends_on:
+      oyla-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:8080/health | grep -q '\"status\":\"ok\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - oyla-network
+
+volumes:
+  oyla-postgres-data:
+
+networks:
+  oyla-network:
+    driver: bridge

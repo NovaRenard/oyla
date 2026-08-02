@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import java.security.SecureRandom
 import java.util.Base64
+import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -26,13 +27,27 @@ data class DeviceSetup(
     val hasPin: Boolean
 )
 
+data class ActiveSession(
+    val sessionId: String,
+    val sessionToken: String,
+    val role: DeviceRole,
+    val connectionCode: String?
+)
+
+interface SessionStorage {
+    suspend fun getOrCreateDeviceId(): String
+    suspend fun saveActiveSession(session: ActiveSession)
+    suspend fun getActiveSession(): ActiveSession?
+    suspend fun clearActiveSession()
+}
+
 sealed interface PinVerificationResult {
     data object Success : PinVerificationResult
     data object Incorrect : PinVerificationResult
     data class Locked(val remainingMillis: Long) : PinVerificationResult
 }
 
-class DevicePreferences(context: Context) {
+class DevicePreferences(context: Context) : SessionStorage {
     private val dataStore = context.applicationContext.deviceDataStore
 
     val setupFlow: Flow<DeviceSetup> = dataStore.data.map { preferences ->
@@ -99,6 +114,51 @@ class DevicePreferences(context: Context) {
         return (lockedUntil - nowMillis).coerceAtLeast(0L)
     }
 
+    override suspend fun getOrCreateDeviceId(): String {
+        var deviceId = ""
+        dataStore.edit { preferences ->
+            deviceId = preferences[DeviceIdKey] ?: UUID.randomUUID().toString().also {
+                preferences[DeviceIdKey] = it
+            }
+        }
+        return deviceId
+    }
+
+    override suspend fun saveActiveSession(session: ActiveSession) {
+        dataStore.edit { preferences ->
+            preferences[ActiveSessionIdKey] = session.sessionId
+            preferences[ActiveSessionTokenKey] = session.sessionToken
+            preferences[ActiveSessionRoleKey] = session.role.name
+            if (session.connectionCode == null) {
+                preferences.remove(ActiveSessionCodeKey)
+            } else {
+                preferences[ActiveSessionCodeKey] = session.connectionCode
+            }
+        }
+    }
+
+    override suspend fun getActiveSession(): ActiveSession? {
+        val values = dataStore.data.first()
+        val sessionId = values[ActiveSessionIdKey] ?: return null
+        val token = values[ActiveSessionTokenKey] ?: return null
+        val role = values[ActiveSessionRoleKey]?.let(::parseRole) ?: return null
+        return ActiveSession(
+            sessionId = sessionId,
+            sessionToken = token,
+            role = role,
+            connectionCode = values[ActiveSessionCodeKey]
+        )
+    }
+
+    override suspend fun clearActiveSession() {
+        dataStore.edit { preferences ->
+            preferences.remove(ActiveSessionIdKey)
+            preferences.remove(ActiveSessionTokenKey)
+            preferences.remove(ActiveSessionRoleKey)
+            preferences.remove(ActiveSessionCodeKey)
+        }
+    }
+
     private fun parseRole(value: String): DeviceRole? = runCatching {
         DeviceRole.valueOf(value)
     }.getOrNull()
@@ -115,5 +175,10 @@ class DevicePreferences(context: Context) {
         val PinSaltKey: Preferences.Key<String> = stringPreferencesKey("specialist_pin_salt")
         val FailedPinAttemptsKey: Preferences.Key<Int> = intPreferencesKey("failed_pin_attempts")
         val PinLockedUntilKey: Preferences.Key<Long> = longPreferencesKey("pin_locked_until")
+        val DeviceIdKey: Preferences.Key<String> = stringPreferencesKey("device_id")
+        val ActiveSessionIdKey: Preferences.Key<String> = stringPreferencesKey("active_session_id")
+        val ActiveSessionTokenKey: Preferences.Key<String> = stringPreferencesKey("active_session_token")
+        val ActiveSessionRoleKey: Preferences.Key<String> = stringPreferencesKey("active_session_role")
+        val ActiveSessionCodeKey: Preferences.Key<String> = stringPreferencesKey("active_session_connection_code")
     }
 }

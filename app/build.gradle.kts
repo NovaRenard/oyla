@@ -1,7 +1,20 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
 }
+
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+
+fun configuredUrl(name: String, fallback: String): String =
+    providers.gradleProperty(name).orNull
+        ?: localProperties.getProperty(name)
+        ?: fallback
 
 android {
     namespace = "kz.oyla.app"
@@ -18,7 +31,21 @@ android {
     }
 
     buildTypes {
+        debug {
+            buildConfigField(
+                "String",
+                "API_BASE_URL",
+                "\"${configuredUrl("OYLA_API_BASE_URL", "http://localhost:8080")}\""
+            )
+            buildConfigField(
+                "String",
+                "WS_BASE_URL",
+                "\"${configuredUrl("OYLA_WS_BASE_URL", "ws://localhost:8080")}\""
+            )
+        }
         release {
+            buildConfigField("String", "API_BASE_URL", "\"https://api.oyla.kz\"")
+            buildConfigField("String", "WS_BASE_URL", "\"wss://api.oyla.kz\"")
             optimization {
                 enable = false
             }
@@ -30,6 +57,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -43,9 +71,15 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.compose.material.icons.extended)
+    implementation(libs.ktor.client.core)
+    implementation(libs.ktor.client.okhttp)
+    implementation(libs.ktor.client.content.negotiation)
+    implementation(libs.ktor.client.websockets)
+    implementation(libs.ktor.serialization.kotlinx.json)
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

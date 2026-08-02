@@ -24,8 +24,11 @@ import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,17 +58,26 @@ import kz.oyla.app.ui.components.OylaPrimaryButton
 import kz.oyla.app.ui.theme.OylaNavy
 import kz.oyla.app.ui.theme.OylaOutline
 import kz.oyla.app.ui.theme.OylaTextMuted
+import kz.oyla.app.ui.session.ChildSessionViewModel
 
 @Composable
 fun ChildConnectScreen(
-    onConnect: () -> Unit,
-    onOpenSettings: () -> Unit
+    viewModel: ChildSessionViewModel,
+    onOpenSettings: () -> Unit,
+    onConnected: () -> Unit
 ) {
+    val state by viewModel.uiState.collectAsState()
     var code by rememberSaveable { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val codeDescription = stringResource(R.string.content_description_code_input)
+    LaunchedEffect(state.connectionSuccessId) {
+        if (state.connectionSuccessId != null) {
+            viewModel.consumeConnectionSuccess()
+            onConnected()
+        }
+    }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val contentTopPadding = maxHeight * 0.17f
@@ -130,20 +142,32 @@ fun ChildConnectScreen(
                     focusRequester = focusRequester,
                     keyboardController = { keyboardController?.show() },
                     contentDescription = codeDescription,
+                    enabled = !state.isLoading,
                     onCodeChange = { code = it }
                 )
+                state.errorMessage?.let { message ->
+                    Text(
+                        text = message,
+                        color = androidx.compose.material3.MaterialTheme.colorScheme.error,
+                        fontSize = 17.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
                 OylaPrimaryButton(
-                    text = stringResource(R.string.connect),
+                    text = stringResource(if (state.isLoading) R.string.connecting else R.string.connect),
                     icon = Icons.Outlined.Link,
                     iconDescription = stringResource(R.string.content_description_connect),
-                    enabled = code.length == 4,
-                    onClick = onConnect,
+                    enabled = code.length == 4 && !state.isLoading,
+                    onClick = { viewModel.connect(code) },
                     textSize = 25.sp,
                     minHeight = 88.dp,
                     modifier = Modifier
                         .fillMaxWidth(0.88f)
                         .padding(top = 16.dp)
                 )
+                if (state.isLoading) {
+                    CircularProgressIndicator(color = OylaNavy)
+                }
             }
         }
     }
@@ -156,6 +180,7 @@ private fun CodeInput(
     focusRequester: FocusRequester,
     keyboardController: () -> Unit,
     contentDescription: String,
+    enabled: Boolean,
     onCodeChange: (String) -> Unit
 ) {
     val cellShape = RoundedCornerShape(22.dp)
@@ -164,7 +189,7 @@ private fun CodeInput(
         modifier = Modifier
             .fillMaxWidth()
             .height(174.dp)
-            .clickable {
+            .clickable(enabled = enabled) {
                 focusRequester.requestFocus()
                 keyboardController()
             }
@@ -175,6 +200,7 @@ private fun CodeInput(
             onValueChange = { newValue ->
                 onCodeChange(newValue.filter(Char::isDigit).take(4))
             },
+            enabled = enabled,
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
             keyboardActions = KeyboardActions(onDone = { keyboardController() }),
