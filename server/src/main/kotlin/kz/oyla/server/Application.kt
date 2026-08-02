@@ -22,6 +22,10 @@ import kotlinx.serialization.json.Json
 import kz.oyla.server.config.DatabaseFactory
 import kz.oyla.server.model.dto.ErrorResponse
 import kz.oyla.server.repository.DatabaseSessionRepository
+import kz.oyla.server.repository.DatabaseExerciseRepository
+import kz.oyla.server.repository.ExerciseRepository
+import kz.oyla.server.repository.InMemoryExerciseRepository
+import kz.oyla.server.repository.InMemorySessionRepository
 import kz.oyla.server.repository.SessionRepository
 import kz.oyla.server.routes.healthRoutes
 import kz.oyla.server.routes.sessionRoutes
@@ -29,6 +33,7 @@ import kz.oyla.server.routes.sessionWebSocketRoutes
 import kz.oyla.server.service.ApiException
 import kz.oyla.server.service.SessionEventHub
 import kz.oyla.server.service.SessionService
+import kz.oyla.server.service.ExerciseService
 
 fun main() {
     val port = (System.getenv("PORT") ?: "8080").toIntOrNull() ?: 8080
@@ -45,7 +50,8 @@ fun Application.module(
     clock: Clock = Clock.systemUTC(),
     codeTtl: Duration = Duration.ofMinutes(
         (System.getenv("SESSION_CODE_TTL_MINUTES") ?: "30").toLongOrNull()?.coerceAtLeast(1) ?: 30
-    )
+    ),
+    exerciseRepository: ExerciseRepository? = null
 ) {
     val json = Json {
         ignoreUnknownKeys = true
@@ -56,7 +62,13 @@ fun Application.module(
         DatabaseFactory.initialize()
         DatabaseSessionRepository()
     }
+    val exercises = exerciseRepository ?: if (repository is InMemorySessionRepository) {
+        InMemoryExerciseRepository()
+    } else {
+        DatabaseExerciseRepository()
+    }
     val sessionService = SessionService(repository, clock = clock, codeTtl = codeTtl)
+    val exerciseService = ExerciseService(exercises, clock)
     val eventHub = SessionEventHub(json)
 
     install(CallLogging) {
@@ -90,7 +102,7 @@ fun Application.module(
     }
     routing {
         healthRoutes()
-        sessionRoutes(sessionService, eventHub)
-        sessionWebSocketRoutes(sessionService, eventHub, json)
+        sessionRoutes(sessionService, exerciseService, eventHub)
+        sessionWebSocketRoutes(sessionService, exerciseService, eventHub, json)
     }
 }

@@ -10,6 +10,8 @@ import kz.oyla.app.data.remote.dto.ConnectSessionResponse
 import kz.oyla.app.data.remote.dto.CreateSessionRequest
 import kz.oyla.app.data.remote.dto.CreateSessionResponse
 import kz.oyla.app.data.remote.dto.SessionStateResponse
+import kz.oyla.app.data.remote.dto.ShowExerciseRequest
+import kz.oyla.app.data.remote.dto.ShowExerciseResponse
 import kz.oyla.app.domain.model.DeviceRole
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -65,6 +67,16 @@ class SessionRepositoryTest {
         assertEquals(SessionUserError.ALREADY_CONNECTED, (result as SessionActionResult.Failure).error)
     }
 
+    @Test
+    fun `exercise API error maps to a safe Russian message`() = runBlocking {
+        val api = FakeApi(showResult = NetworkResult.NetworkError)
+        val result = SessionRepository(api, FakeStorage()).showExercise(
+            SessionDetails("session", "Алина", null, "READY", true, "specialist-token", DeviceRole.SPECIALIST),
+            "sound-r-rocket"
+        )
+        assertEquals("Соединение потеряно. Переподключаемся…", (result as ExerciseActionResult.Failure).message)
+    }
+
     private class FakeStorage : SessionStorage {
         var active: ActiveSession? = null
         override suspend fun getOrCreateDeviceId() = "device-1"
@@ -75,7 +87,8 @@ class SessionRepositoryTest {
 
     private class FakeApi(
         private val createResult: NetworkResult<CreateSessionResponse> = NetworkResult.HttpError(500),
-        private val connectResult: NetworkResult<ConnectSessionResponse> = NetworkResult.HttpError(500)
+        private val connectResult: NetworkResult<ConnectSessionResponse> = NetworkResult.HttpError(500),
+        private val showResult: NetworkResult<ShowExerciseResponse> = NetworkResult.HttpError(500)
     ) : OylaApi {
         var lastCreateRequest: CreateSessionRequest? = null
         var lastConnectRequest: ConnectSessionRequest? = null
@@ -95,5 +108,11 @@ class SessionRepositoryTest {
 
         override suspend fun cancelSession(sessionId: String, token: String): NetworkResult<Unit> =
             NetworkResult.HttpError(500)
+
+        override suspend fun showExercise(
+            sessionId: String,
+            token: String,
+            request: ShowExerciseRequest
+        ): NetworkResult<ShowExerciseResponse> = showResult
     }
 }

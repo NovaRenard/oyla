@@ -39,9 +39,14 @@ import kz.oyla.app.ui.theme.OylaNavy
 import kz.oyla.app.ui.theme.OylaTextMuted
 
 @Composable
-fun SpecialistWaitingScreen(viewModel: SpecialistSessionViewModel, onCancelled: () -> Unit) {
+fun SpecialistWaitingScreen(viewModel: SpecialistSessionViewModel, onOpenExercise: () -> Unit, onCancelled: () -> Unit) {
     val state by viewModel.uiState.collectAsState()
     LaunchedEffect(Unit) { viewModel.restoreActiveSession() }
+    LaunchedEffect(state.exercise.exerciseStatus) {
+        if (state.exercise.exerciseStatus in setOf(ExerciseUiStatus.SHOWN, ExerciseUiStatus.RUNNING, ExerciseUiStatus.COMPLETED)) {
+            onOpenExercise()
+        }
+    }
     BackHandler(enabled = true) { }
     val session = state.session
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -107,8 +112,8 @@ fun SpecialistWaitingScreen(viewModel: SpecialistSessionViewModel, onCancelled: 
                         text = stringResource(R.string.go_to_tasks_later),
                         icon = Icons.Outlined.PlayArrow,
                         iconDescription = stringResource(R.string.go_to_tasks_later),
-                        enabled = false,
-                        onClick = {},
+                        enabled = !state.isLoading,
+                        onClick = onOpenExercise,
                         textSize = 20.sp,
                         minHeight = 62.dp,
                         modifier = Modifier.fillMaxWidth(0.78f)

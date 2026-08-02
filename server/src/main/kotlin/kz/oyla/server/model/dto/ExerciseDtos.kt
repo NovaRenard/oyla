@@ -1,0 +1,75 @@
+package kz.oyla.server.model.dto
+
+import kotlinx.serialization.Serializable
+import kz.oyla.server.model.ExerciseStatus
+
+@Serializable
+data class ExerciseOptionDto(
+    val id: String,
+    val label: String,
+    val imageAssetKey: String,
+    val position: Int
+)
+
+@Serializable
+data class ExerciseDto(
+    val id: String,
+    val instructionText: String,
+    val audioAssetKey: String? = null,
+    val options: List<ExerciseOptionDto>
+)
+
+@Serializable
+data class SpecialistExerciseDto(
+    val exercise: ExerciseDto,
+    val correctOptionId: String
+)
+
+@Serializable
+data class ShowExerciseRequest(val exerciseId: String)
+
+@Serializable
+data class ShowExerciseResponse(
+    val sessionExerciseId: String,
+    val exerciseId: String,
+    val status: ExerciseStatus
+)
+
+@Serializable
+data class StartExerciseRequest(val sessionExerciseId: String)
+
+@Serializable
+data class StartExerciseResponse(
+    val sessionExerciseId: String,
+    val status: ExerciseStatus,
+    val startedAt: String
+)
+
+@Serializable
+data class AnswerExerciseRequest(
+    val sessionExerciseId: String,
+    val selectedOptionId: String,
+    val clientEventId: String
+)
+
+@Serializable
+data class AnswerExerciseResponse(
+    val sessionExerciseId: String,
+    val selectedOptionId: String,
+    val selectedOptionLabel: String,
+    val isCorrect: Boolean,
+    val attemptNumber: Int,
+    val responseTimeMs: Long,
+    val exerciseStatus: ExerciseStatus
+)
+
+@Serializable
+data class ExerciseStateResponse(
+    val sessionExerciseId: String? = null,
+    val exerciseStatus: ExerciseStatus = ExerciseStatus.PENDING,
+    val exercise: ExerciseDto? = null,
+    val correctOptionId: String? = null,
+    val latestAnswer: AnswerExerciseResponse? = null,
+    val attemptCount: Int = 0,
+    val startedAt: String? = null
+)

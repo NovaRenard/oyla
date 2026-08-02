@@ -31,9 +31,14 @@ import kz.oyla.app.ui.theme.OylaNavy
 import kz.oyla.app.ui.theme.OylaTextMuted
 
 @Composable
-fun ChildWaitingScreen(viewModel: ChildSessionViewModel) {
+fun ChildWaitingScreen(viewModel: ChildSessionViewModel, onExerciseShown: () -> Unit) {
     val state by viewModel.uiState.collectAsState()
     LaunchedEffect(Unit) { viewModel.restoreActiveSession() }
+    LaunchedEffect(state.exercise.exerciseStatus) {
+        if (state.exercise.exerciseStatus in setOf(ExerciseUiStatus.SHOWN, ExerciseUiStatus.RUNNING, ExerciseUiStatus.COMPLETED)) {
+            onExerciseShown()
+        }
+    }
     BackHandler(enabled = true) { }
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         OylaBackground(R.drawable.bg_child_connect)

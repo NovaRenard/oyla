@@ -1,6 +1,7 @@
 package kz.oyla.server.model.dto
 
 import kotlinx.serialization.Serializable
+import kz.oyla.server.model.ExerciseStatus
 import kz.oyla.server.model.SessionStatus
 
 @Serializable
@@ -56,7 +57,14 @@ data class StateSnapshotEvent(
     val type: String = "STATE_SNAPSHOT",
     val sessionId: String,
     val status: SessionStatus,
-    val childConnected: Boolean
+    val childConnected: Boolean,
+    val exerciseStatus: ExerciseStatus = ExerciseStatus.PENDING,
+    val sessionExerciseId: String? = null,
+    val exercise: ExerciseDto? = null,
+    val correctOptionId: String? = null,
+    val latestAnswer: AnswerExerciseResponse? = null,
+    val attemptCount: Int = 0,
+    val startedAt: String? = null
 )
 
 @Serializable
@@ -71,4 +79,53 @@ data class ChildConnectedEvent(
 data class SessionCancelledEvent(
     val type: String = "SESSION_CANCELLED",
     val sessionId: String
+)
+
+@Serializable
+data class SessionCompletedEvent(
+    val type: String = "SESSION_COMPLETED",
+    val sessionId: String
+)
+
+@Serializable
+data class ExerciseShownEvent(
+    val type: String = "EXERCISE_SHOWN",
+    val sessionId: String,
+    val sessionExerciseId: String,
+    val exercise: ExerciseDto,
+    val exerciseStatus: ExerciseStatus,
+    val correctOptionId: String? = null
+)
+
+@Serializable
+data class ExerciseStartedEvent(
+    val type: String = "EXERCISE_STARTED",
+    val sessionId: String,
+    val sessionExerciseId: String,
+    val exerciseStatus: ExerciseStatus,
+    val startedAt: String
+)
+
+@Serializable
+data class AnswerReceivedEvent(
+    val type: String = "ANSWER_RECEIVED",
+    val sessionId: String,
+    val sessionExerciseId: String,
+    val selectedOptionId: String,
+    val selectedOptionLabel: String,
+    val isCorrect: Boolean,
+    val attemptNumber: Int,
+    val responseTimeMs: Long,
+    val exerciseStatus: ExerciseStatus
+)
+
+@Serializable
+data class ExerciseCompletedEvent(
+    val type: String = "EXERCISE_COMPLETED",
+    val sessionId: String,
+    val sessionExerciseId: String,
+    val selectedOptionId: String,
+    val attemptNumber: Int,
+    val responseTimeMs: Long,
+    val exerciseStatus: ExerciseStatus
 )

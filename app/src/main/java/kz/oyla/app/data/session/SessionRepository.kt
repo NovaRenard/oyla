@@ -9,6 +9,15 @@ import kz.oyla.app.data.remote.dto.ConnectSessionResponse
 import kz.oyla.app.data.remote.dto.CreateSessionRequest
 import kz.oyla.app.data.remote.dto.CreateSessionResponse
 import kz.oyla.app.data.remote.dto.SessionStateResponse
+import kz.oyla.app.data.remote.dto.ExerciseDto
+import kz.oyla.app.data.remote.dto.ExerciseStateResponse
+import kz.oyla.app.data.remote.dto.SpecialistExerciseDto
+import kz.oyla.app.data.remote.dto.ShowExerciseRequest
+import kz.oyla.app.data.remote.dto.ShowExerciseResponse
+import kz.oyla.app.data.remote.dto.StartExerciseRequest
+import kz.oyla.app.data.remote.dto.StartExerciseResponse
+import kz.oyla.app.data.remote.dto.AnswerExerciseRequest
+import kz.oyla.app.data.remote.dto.AnswerExerciseResponse
 import kz.oyla.app.domain.model.DeviceRole
 
 data class SessionDetails(
@@ -33,6 +42,11 @@ enum class SessionUserError(val message: String) {
     ALREADY_CONNECTED("К этому занятию уже подключено другое устройство"),
     INVALID_DATA("Проверьте введённые данные"),
     UNKNOWN("Не удалось выполнить действие. Попробуйте ещё раз")
+}
+
+sealed interface ExerciseActionResult<out T> {
+    data class Success<T>(val value: T) : ExerciseActionResult<T>
+    data class Failure(val message: String) : ExerciseActionResult<Nothing>
 }
 
 class SessionRepository(
@@ -84,6 +98,45 @@ class SessionRepository(
         }
     }
 
+    suspend fun completeActiveSession(): SessionActionResult<Unit> {
+        val active = storage.getActiveSession() ?: return SessionActionResult.Success(Unit)
+        return when (val result = api.completeSession(active.sessionId, active.sessionToken)) {
+            is NetworkResult.Success -> {
+                storage.clearActiveSession()
+                SessionActionResult.Success(Unit)
+            }
+            else -> SessionActionResult.Failure(result.toUserError())
+        }
+    }
+
+    suspend fun getExercise(exerciseId: String): ExerciseActionResult<ExerciseDto> =
+        api.getExercise(exerciseId).toExerciseResult("Не удалось загрузить задание")
+
+    suspend fun getExerciseState(session: SessionDetails): ExerciseActionResult<ExerciseStateResponse> =
+        api.getExerciseState(session.sessionId, session.token).toExerciseResult("Соединение потеряно. Переподключаемся…")
+
+    suspend fun getSpecialistExercise(session: SessionDetails): ExerciseActionResult<SpecialistExerciseDto> =
+        api.getSpecialistExercise(session.sessionId, session.token).toExerciseResult("Не удалось загрузить задание")
+
+    suspend fun showExercise(session: SessionDetails, exerciseId: String): ExerciseActionResult<ShowExerciseResponse> =
+        api.showExercise(session.sessionId, session.token, ShowExerciseRequest(exerciseId))
+            .toExerciseResult("Не удалось показать задание")
+
+    suspend fun startExercise(session: SessionDetails, sessionExerciseId: String): ExerciseActionResult<StartExerciseResponse> =
+        api.startExercise(session.sessionId, session.token, StartExerciseRequest(sessionExerciseId))
+            .toExerciseResult("Не удалось начать задание")
+
+    suspend fun submitAnswer(
+        session: SessionDetails,
+        sessionExerciseId: String,
+        optionId: String,
+        clientEventId: String
+    ): ExerciseActionResult<AnswerExerciseResponse> =
+        api.answerExercise(session.sessionId, session.token, AnswerExerciseRequest(sessionExerciseId, optionId, clientEventId))
+            .toExerciseResult("Ответ не отправлен. Попробуйте ещё раз")
+
+    suspend fun clearActiveSession() = storage.clearActiveSession()
+
     private fun CreateSessionResponse.toSpecialistDetails() = SessionDetails(
         sessionId = sessionId,
         childName = "",
@@ -131,5 +184,19 @@ class SessionRepository(
             else -> SessionUserError.UNKNOWN
         }
         is NetworkResult.Success -> SessionUserError.UNKNOWN
+    }
+
+    private fun <T> NetworkResult<T>.toExerciseResult(fallback: String): ExerciseActionResult<T> = when (this) {
+        is NetworkResult.Success -> ExerciseActionResult.Success(data)
+        NetworkResult.NetworkError -> ExerciseActionResult.Failure("Соединение потеряно. Переподключаемся…")
+        is NetworkResult.HttpError -> ExerciseActionResult.Failure(
+            when (statusCode) {
+                409 -> when (errorCode) {
+                    "ALREADY_CONNECTED" -> fallback
+                    else -> fallback
+                }
+                else -> fallback
+            }
+        )
     }
 }

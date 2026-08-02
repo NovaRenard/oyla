@@ -10,5 +10,7 @@ enum class OylaDestination(val route: String) {
     CHILD_CONNECT("child_connect"),
     CREATE_SESSION("create_session"),
     SPECIALIST_WAITING("specialist_waiting"),
-    CHILD_WAITING("child_waiting")
+    CHILD_WAITING("child_waiting"),
+    SPECIALIST_EXERCISE("specialist_exercise"),
+    CHILD_EXERCISE("child_exercise")
 }

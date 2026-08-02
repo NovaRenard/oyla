@@ -9,9 +9,10 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kz.oyla.server.model.dto.StateSnapshotEvent
 import kz.oyla.server.service.SessionEventHub
+import kz.oyla.server.service.ExerciseService
 import kz.oyla.server.service.SessionService
 
-fun Route.sessionWebSocketRoutes(service: SessionService, eventHub: SessionEventHub, json: Json) {
+fun Route.sessionWebSocketRoutes(service: SessionService, exercises: ExerciseService, eventHub: SessionEventHub, json: Json) {
     webSocket("/ws/sessions/{sessionId}") {
         val sessionId = call.parameters["sessionId"].orEmpty()
         val token = call.request.queryParameters["token"]
@@ -22,13 +23,21 @@ fun Route.sessionWebSocketRoutes(service: SessionService, eventHub: SessionEvent
         eventHub.register(authorized.session.id, authorized.role, this)
         service.markSocketPresence(authorized, connected = true)
         try {
+            val snapshot = exercises.stateFor(authorized)
             send(
                 Frame.Text(
                     json.encodeToString(
                         StateSnapshotEvent(
                             sessionId = authorized.session.id.toString(),
                             status = authorized.session.status,
-                            childConnected = authorized.session.childDeviceId != null
+                            childConnected = authorized.session.childDeviceId != null,
+                            exerciseStatus = snapshot.exerciseStatus,
+                            sessionExerciseId = snapshot.sessionExerciseId,
+                            exercise = snapshot.exercise,
+                            correctOptionId = snapshot.correctOptionId,
+                            latestAnswer = snapshot.latestAnswer,
+                            attemptCount = snapshot.attemptCount,
+                            startedAt = snapshot.startedAt
                         )
                     )
                 )

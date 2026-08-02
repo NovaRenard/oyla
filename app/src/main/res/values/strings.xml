@@ -49,7 +49,7 @@
     <string name="waiting_child_detail">Попросите ребёнка ввести этот код на своём планшете</string>
     <string name="child_connected">Ребёнок подключён</string>
     <string name="cancel_session">Отменить занятие</string>
-    <string name="go_to_tasks_later">Перейти к заданиям — следующий этап</string>
+    <string name="go_to_tasks_later">Перейти к заданию</string>
     <string name="connecting_to_server">Подключаемся к серверу…</string>
     <string name="connection_active">Соединение активно</string>
     <string name="reconnecting">Соединение потеряно. Переподключаемся…</string>

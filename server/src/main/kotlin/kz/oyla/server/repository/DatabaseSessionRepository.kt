@@ -157,6 +157,19 @@ class DatabaseSessionRepository : SessionRepository {
         connection.findSession("SELECT * FROM sessions WHERE id = ?") { setObject(1, id) }
     }
 
+    override suspend fun complete(id: UUID, now: Instant): SessionRecord? = database {
+        connection.prepareStatement(
+            """UPDATE sessions SET status = ?, completed_at = ?
+               WHERE id = ? AND status IN ('WAITING_FOR_CHILD', 'READY')"""
+        ).use { statement ->
+            statement.setString(1, SessionStatus.COMPLETED.name)
+            statement.setTimestamp(2, java.sql.Timestamp.from(now))
+            statement.setObject(3, id)
+            statement.executeUpdate()
+        }
+        connection.findSession("SELECT * FROM sessions WHERE id = ?") { setObject(1, id) }
+    }
+
     override suspend fun updateDeviceConnection(
         session: SessionRecord,
         role: DeviceRole,

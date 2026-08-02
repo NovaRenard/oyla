@@ -20,12 +20,28 @@ import kz.oyla.app.data.remote.dto.CreateSessionRequest
 import kz.oyla.app.data.remote.dto.CreateSessionResponse
 import kz.oyla.app.data.remote.dto.ErrorResponse
 import kz.oyla.app.data.remote.dto.SessionStateResponse
+import kz.oyla.app.data.remote.dto.ExerciseDto
+import kz.oyla.app.data.remote.dto.ExerciseStateResponse
+import kz.oyla.app.data.remote.dto.SpecialistExerciseDto
+import kz.oyla.app.data.remote.dto.ShowExerciseRequest
+import kz.oyla.app.data.remote.dto.ShowExerciseResponse
+import kz.oyla.app.data.remote.dto.StartExerciseRequest
+import kz.oyla.app.data.remote.dto.StartExerciseResponse
+import kz.oyla.app.data.remote.dto.AnswerExerciseRequest
+import kz.oyla.app.data.remote.dto.AnswerExerciseResponse
 
 interface OylaApi {
     suspend fun createSession(request: CreateSessionRequest): NetworkResult<CreateSessionResponse>
     suspend fun connectSession(request: ConnectSessionRequest): NetworkResult<ConnectSessionResponse>
     suspend fun getSessionState(sessionId: String, token: String): NetworkResult<SessionStateResponse>
     suspend fun cancelSession(sessionId: String, token: String): NetworkResult<Unit>
+    suspend fun completeSession(sessionId: String, token: String): NetworkResult<Unit> = NetworkResult.HttpError(501)
+    suspend fun getExercise(exerciseId: String): NetworkResult<ExerciseDto> = NetworkResult.HttpError(501)
+    suspend fun getExerciseState(sessionId: String, token: String): NetworkResult<ExerciseStateResponse> = NetworkResult.HttpError(501)
+    suspend fun getSpecialistExercise(sessionId: String, token: String): NetworkResult<SpecialistExerciseDto> = NetworkResult.HttpError(501)
+    suspend fun showExercise(sessionId: String, token: String, request: ShowExerciseRequest): NetworkResult<ShowExerciseResponse> = NetworkResult.HttpError(501)
+    suspend fun startExercise(sessionId: String, token: String, request: StartExerciseRequest): NetworkResult<StartExerciseResponse> = NetworkResult.HttpError(501)
+    suspend fun answerExercise(sessionId: String, token: String, request: AnswerExerciseRequest): NetworkResult<AnswerExerciseResponse> = NetworkResult.HttpError(501)
 }
 
 class OylaApiClient(
@@ -54,9 +70,55 @@ class OylaApiClient(
         NetworkResult.NetworkError
     }
 
+    override suspend fun completeSession(sessionId: String, token: String): NetworkResult<Unit> = postNoContent(
+        "/api/v1/sessions/$sessionId/complete", token
+    )
+
+    override suspend fun getExercise(exerciseId: String): NetworkResult<ExerciseDto> = request {
+        client.get("${baseUrl.trimEnd('/')}/api/v1/exercises/$exerciseId")
+    }
+
+    override suspend fun getExerciseState(sessionId: String, token: String): NetworkResult<ExerciseStateResponse> = request {
+        client.get("${baseUrl.trimEnd('/')}/api/v1/sessions/$sessionId/exercise/state") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
+    }
+
+    override suspend fun getSpecialistExercise(sessionId: String, token: String): NetworkResult<SpecialistExerciseDto> = request {
+        client.get("${baseUrl.trimEnd('/')}/api/v1/sessions/$sessionId/exercise/specialist") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
+    }
+
+    override suspend fun showExercise(sessionId: String, token: String, request: ShowExerciseRequest) = requestJsonAuth<ShowExerciseResponse, ShowExerciseRequest>(
+        "/api/v1/sessions/$sessionId/exercise/show", token, request
+    )
+
+    override suspend fun startExercise(sessionId: String, token: String, request: StartExerciseRequest) = requestJsonAuth<StartExerciseResponse, StartExerciseRequest>(
+        "/api/v1/sessions/$sessionId/exercise/start", token, request
+    )
+
+    override suspend fun answerExercise(sessionId: String, token: String, request: AnswerExerciseRequest) = requestJsonAuth<AnswerExerciseResponse, AnswerExerciseRequest>(
+        "/api/v1/sessions/$sessionId/exercise/answer", token, request
+    )
+
+    private suspend fun postNoContent(path: String, token: String): NetworkResult<Unit> = try {
+        val response = client.post("${baseUrl.trimEnd('/')}$path") { header(HttpHeaders.Authorization, "Bearer $token") }
+        if (response.status == HttpStatusCode.NoContent) NetworkResult.Success(Unit) else response.toError()
+    } catch (_: Exception) { NetworkResult.NetworkError }
+
     private suspend inline fun <reified T, reified B> requestJson(path: String, body: B): NetworkResult<T> =
         request {
             client.post("${baseUrl.trimEnd('/')}$path") {
+                contentType(ContentType.Application.Json)
+                setBody(body)
+            }
+        }
+
+    private suspend inline fun <reified T, reified B> requestJsonAuth(path: String, token: String, body: B): NetworkResult<T> =
+        request {
+            client.post("${baseUrl.trimEnd('/')}$path") {
+                header(HttpHeaders.Authorization, "Bearer $token")
                 contentType(ContentType.Application.Json)
                 setBody(body)
             }

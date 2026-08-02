@@ -29,6 +29,8 @@ import kz.oyla.app.ui.session.CreateSessionScreen
 import kz.oyla.app.ui.session.SpecialistSessionViewModel
 import kz.oyla.app.ui.session.SpecialistSessionViewModelFactory
 import kz.oyla.app.ui.session.SpecialistWaitingScreen
+import kz.oyla.app.ui.session.SpecialistExerciseScreen
+import kz.oyla.app.ui.session.ChildExerciseScreen
 
 @Composable
 fun OylaNavGraph(
@@ -157,6 +159,9 @@ fun OylaNavGraph(
             composable(OylaDestination.SPECIALIST_WAITING.route) {
                 SpecialistWaitingScreen(
                     viewModel = specialistViewModel,
+                    onOpenExercise = {
+                        navController.navigate(OylaDestination.SPECIALIST_EXERCISE.route) { launchSingleTop = true }
+                    },
                     onCancelled = {
                         navController.navigate(OylaDestination.SPECIALIST_HOME.route) {
                             popUpTo(OylaDestination.SPECIALIST_HOME.route) { inclusive = false }
@@ -166,7 +171,26 @@ fun OylaNavGraph(
                 )
             }
             composable(OylaDestination.CHILD_WAITING.route) {
-                ChildWaitingScreen(viewModel = childViewModel)
+                ChildWaitingScreen(
+                    viewModel = childViewModel,
+                    onExerciseShown = {
+                        navController.navigate(OylaDestination.CHILD_EXERCISE.route) { launchSingleTop = true }
+                    }
+                )
+            }
+            composable(OylaDestination.SPECIALIST_EXERCISE.route) {
+                SpecialistExerciseScreen(
+                    viewModel = specialistViewModel,
+                    onCompleted = {
+                        navController.navigate(OylaDestination.SPECIALIST_HOME.route) {
+                            popUpTo(OylaDestination.SPECIALIST_HOME.route) { inclusive = false }
+                            launchSingleTop = true
+                        }
+                    }
+                )
+            }
+            composable(OylaDestination.CHILD_EXERCISE.route) {
+                ChildExerciseScreen(viewModel = childViewModel)
             }
         }
     }

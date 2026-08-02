@@ -92,6 +92,13 @@ class SessionService(
             ?: throw ApiException.notFound("Занятие не найдено")
     }
 
+    suspend fun complete(sessionId: String, token: String?): SessionRecord {
+        val authorized = authorize(sessionId, token)
+        if (authorized.role != DeviceRole.SPECIALIST) throw ApiException.forbidden()
+        return repository.complete(authorized.session.id, clock.instant())
+            ?: throw ApiException.notFound("Занятие не найдено")
+    }
+
     suspend fun markSocketPresence(authorized: AuthorizedSession, connected: Boolean) {
         repository.updateDeviceConnection(authorized.session, authorized.role, connected, clock.instant())
     }

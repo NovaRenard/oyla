@@ -8,7 +8,14 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kz.oyla.server.model.DeviceRole
 import kz.oyla.server.model.dto.ChildConnectedEvent
+import kz.oyla.server.model.dto.ExerciseCompletedEvent
+import kz.oyla.server.model.dto.ExerciseShownEvent
+import kz.oyla.server.model.dto.ExerciseStartedEvent
+import kz.oyla.server.model.dto.AnswerExerciseResponse
+import kz.oyla.server.model.dto.AnswerReceivedEvent
+import kz.oyla.server.model.dto.ExerciseStateResponse
 import kz.oyla.server.model.dto.SessionCancelledEvent
+import kz.oyla.server.model.dto.SessionCompletedEvent
 
 class SessionEventHub(private val json: Json) {
     private data class Connection(
@@ -40,6 +47,45 @@ class SessionEventHub(private val json: Json) {
 
     suspend fun publishSessionCancelled(sessionId: UUID) {
         publishToAll(sessionId, json.encodeToString(SessionCancelledEvent(sessionId = sessionId.toString())))
+    }
+
+    suspend fun publishSessionCompleted(sessionId: UUID) {
+        publishToAll(sessionId, json.encodeToString(SessionCompletedEvent(sessionId = sessionId.toString())))
+    }
+
+    suspend fun publishExerciseShown(sessionId: UUID, state: ExerciseStateResponse) {
+        val exercise = state.exercise ?: return
+        val event = ExerciseShownEvent(
+            sessionId = sessionId.toString(), sessionExerciseId = checkNotNull(state.sessionExerciseId),
+            exercise = exercise, exerciseStatus = state.exerciseStatus
+        )
+        publishToRole(sessionId, DeviceRole.CHILD, json.encodeToString(event))
+        publishToRole(sessionId, DeviceRole.SPECIALIST, json.encodeToString(event.copy(correctOptionId = state.correctOptionId)))
+    }
+
+    suspend fun publishExerciseStarted(sessionId: UUID, state: ExerciseStateResponse) {
+        val event = ExerciseStartedEvent(
+            sessionId = sessionId.toString(), sessionExerciseId = checkNotNull(state.sessionExerciseId),
+            exerciseStatus = state.exerciseStatus, startedAt = checkNotNull(state.startedAt)
+        )
+        publishToAll(sessionId, json.encodeToString(event))
+    }
+
+    suspend fun publishAnswer(sessionId: UUID, answer: AnswerExerciseResponse) {
+        val received = AnswerReceivedEvent(
+            sessionId = sessionId.toString(), sessionExerciseId = answer.sessionExerciseId,
+            selectedOptionId = answer.selectedOptionId, selectedOptionLabel = answer.selectedOptionLabel,
+            isCorrect = answer.isCorrect, attemptNumber = answer.attemptNumber,
+            responseTimeMs = answer.responseTimeMs, exerciseStatus = answer.exerciseStatus
+        )
+        publishToAll(sessionId, json.encodeToString(received))
+        if (answer.exerciseStatus == kz.oyla.server.model.ExerciseStatus.COMPLETED) {
+            publishToAll(sessionId, json.encodeToString(ExerciseCompletedEvent(
+                sessionId = sessionId.toString(), sessionExerciseId = answer.sessionExerciseId,
+                selectedOptionId = answer.selectedOptionId, attemptNumber = answer.attemptNumber,
+                responseTimeMs = answer.responseTimeMs, exerciseStatus = answer.exerciseStatus
+            )))
+        }
     }
 
     private suspend fun publishToRole(sessionId: UUID, role: DeviceRole, payload: String) {

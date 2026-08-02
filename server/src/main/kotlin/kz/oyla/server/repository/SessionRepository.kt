@@ -41,6 +41,7 @@ interface SessionRepository {
 
     suspend fun expireIfNecessary(id: UUID, now: Instant): SessionRecord?
     suspend fun cancel(id: UUID, now: Instant): SessionRecord?
+    suspend fun complete(id: UUID, now: Instant): SessionRecord?
     suspend fun updateDeviceConnection(
         session: SessionRecord,
         role: DeviceRole,

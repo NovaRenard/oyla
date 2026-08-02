@@ -61,7 +61,15 @@ private fun OylaApp(devicePreferences: DevicePreferences) {
     var startDestination by remember { mutableStateOf<OylaDestination?>(null) }
 
     LaunchedEffect(devicePreferences) {
-        startDestination = devicePreferences.setupFlow.first().toStartDestination()
+        val setup = devicePreferences.setupFlow.first()
+        val normalStart = setup.toStartDestination()
+        val active = devicePreferences.getActiveSession()
+        startDestination = when {
+            !setup.hasPin || setup.role == null -> normalStart
+            active?.role == DeviceRole.SPECIALIST -> OylaDestination.SPECIALIST_WAITING
+            active?.role == DeviceRole.CHILD -> OylaDestination.CHILD_WAITING
+            else -> normalStart
+        }
     }
 
     val destination = startDestination

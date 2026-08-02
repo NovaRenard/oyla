@@ -86,6 +86,13 @@ class InMemorySessionRepository : SessionRepository {
         }
     }
 
+    override suspend fun complete(id: UUID, now: Instant): SessionRecord? = synchronized(sessions) {
+        val session = sessions[id] ?: return@synchronized null
+        if (session.status in setOf(SessionStatus.WAITING_FOR_CHILD, SessionStatus.READY)) {
+            session.copy(status = SessionStatus.COMPLETED, completedAt = now).also { sessions[id] = it }
+        } else session
+    }
+
     override suspend fun updateDeviceConnection(
         session: SessionRecord,
         role: DeviceRole,
