@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
@@ -96,7 +97,9 @@ fun OylaPrimaryButton(
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
-                .fillMaxSize()
+                // A button child receives the Column's available height. Filling that height
+                // makes every OylaPrimaryButton expand to the entire section.
+                .fillMaxWidth()
                 .background(
                     brush = Brush.horizontalGradient(
                         listOf(if (enabled) OylaBlue else OylaDisabled, if (enabled) OylaBlueDark else OylaDisabled)

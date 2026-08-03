@@ -28,7 +28,7 @@ services:
       DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-change-me-before-production}
       SESSION_CODE_TTL_MINUTES: ${SESSION_CODE_TTL_MINUTES:-30}
     ports:
-      - "${OYLA_SERVER_PORT:-8083}:8080"
+      - "127.0.0.1:${OYLA_SERVER_PORT:-8083}:8080"
     depends_on:
       oyla-db:
         condition: service_healthy
