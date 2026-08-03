@@ -106,7 +106,6 @@ fun VerifyPinScreen(
             PinField(
                 value = pin,
                 label = stringResource(R.string.pin_first_label),
-                description = stringResource(R.string.content_description_pin_input),
                 pinVisible = pinVisible,
                 onVisibilityToggle = { pinVisible = !pinVisible },
                 isError = showIncorrect,
