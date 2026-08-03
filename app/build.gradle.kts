@@ -44,7 +44,7 @@ android {
             )
         }
         release {
-            buildConfigField("String", "API_BASE_URL", "\"https://oyla.koshakan-center.kz\")
+            buildConfigField("String", "API_BASE_URL", "\"https://oyla.koshakan-center.kz\"")
             buildConfigField("String", "WS_BASE_URL", "\"wss://oyla.koshakan-center.kz\"")
             optimization {
                 enable = false
