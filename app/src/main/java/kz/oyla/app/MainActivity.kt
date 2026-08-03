@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -49,7 +50,8 @@ class MainActivity : ComponentActivity() {
         hideNavigationBar()
         setContent {
             OylaTheme {
-                OylaApp(DevicePreferences(applicationContext))
+                val devicePreferences = remember { DevicePreferences(applicationContext) }
+                OylaApp(devicePreferences)
             }
         }
     }
@@ -60,7 +62,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun hideNavigationBar() {
-        WindowCompat.getInsetsController(window, window.decorView).apply {
+        WindowCompat.getInsetsController(window, window.decorView)?.apply {
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             hide(WindowInsetsCompat.Type.navigationBars())
         }
@@ -135,7 +137,7 @@ private fun LoadingScreen() {
                     .height(6.dp)
             )
             Spacer(modifier = Modifier.height(12.dp))
-            androidx.compose.material3.Text(
+            Text(
                 text = stringResource(R.string.loading),
                 color = MaterialTheme.colorScheme.onBackground
             )

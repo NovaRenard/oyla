@@ -26,8 +26,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -38,7 +37,6 @@ import kz.oyla.app.R
 import kz.oyla.app.ui.theme.OylaBlue
 import kz.oyla.app.ui.theme.OylaBlueDark
 import kz.oyla.app.ui.theme.OylaDisabled
-import kz.oyla.app.ui.theme.OylaNavy
 
 @Composable
 fun OylaBackground(@DrawableRes backgroundRes: Int) {
@@ -54,7 +52,7 @@ fun OylaBackground(@DrawableRes backgroundRes: Int) {
 fun OylaLogo(modifier: Modifier = Modifier) {
     Image(
         painter = painterResource(R.drawable.oyla_logo),
-        contentDescription = androidx.compose.ui.res.stringResource(R.string.content_description_logo),
+        contentDescription = stringResource(R.string.content_description_logo),
         contentScale = ContentScale.Fit,
         modifier = modifier.widthIn(max = 230.dp)
     )
@@ -90,9 +88,7 @@ fun OylaPrimaryButton(
             disabledElevation = 0.dp
         ),
         contentPadding = PaddingValues(0.dp),
-        modifier = modifier
-            .heightIn(min = minHeight)
-            .semantics { contentDescription = text }
+        modifier = modifier.heightIn(min = minHeight)
     ) {
         Box(
             contentAlignment = Alignment.Center,

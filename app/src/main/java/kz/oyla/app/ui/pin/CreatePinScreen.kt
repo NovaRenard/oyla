@@ -33,8 +33,6 @@ import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -55,7 +53,6 @@ fun CreatePinScreen(onPinCreated: suspend (String) -> Unit) {
     var showMismatch by rememberSaveable { mutableStateOf(false) }
     var pinVisible by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val pinDescription = stringResource(R.string.content_description_pin_input)
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
 
@@ -96,7 +93,6 @@ fun CreatePinScreen(onPinCreated: suspend (String) -> Unit) {
             PinField(
                 value = pin,
                 label = stringResource(R.string.pin_first_label),
-                description = pinDescription,
                 pinVisible = pinVisible,
                 onVisibilityToggle = { pinVisible = !pinVisible },
                 isError = showMismatch,
@@ -108,7 +104,6 @@ fun CreatePinScreen(onPinCreated: suspend (String) -> Unit) {
             PinField(
                 value = confirmation,
                 label = stringResource(R.string.pin_second_label),
-                description = pinDescription,
                 pinVisible = pinVisible,
                 onVisibilityToggle = { pinVisible = !pinVisible },
                 isError = showMismatch,
@@ -151,7 +146,6 @@ fun CreatePinScreen(onPinCreated: suspend (String) -> Unit) {
 internal fun PinField(
     value: String,
     label: String,
-    description: String,
     pinVisible: Boolean,
     onVisibilityToggle: () -> Unit,
     isError: Boolean,
@@ -185,8 +179,6 @@ internal fun PinField(
                 )
             }
         },
-        modifier = Modifier
-            .fillMaxWidth()
-            .semantics { contentDescription = description }
+        modifier = Modifier.fillMaxWidth()
     )
 }

@@ -42,8 +42,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -70,7 +68,6 @@ fun ChildConnectScreen(
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
-    val codeDescription = stringResource(R.string.content_description_code_input)
     LaunchedEffect(state.connectionSuccessId) {
         if (state.connectionSuccessId != null) {
             viewModel.consumeConnectionSuccess()
@@ -151,7 +148,6 @@ fun ChildConnectScreen(
                     cellWidth = codeCellWidth,
                     focusRequester = focusRequester,
                     keyboardController = { keyboardController?.show() },
-                    contentDescription = codeDescription,
                     enabled = !state.isLoading,
                     onCodeChange = { code = it }
                 )
@@ -177,7 +173,6 @@ private fun CodeInput(
     cellWidth: Dp,
     focusRequester: FocusRequester,
     keyboardController: () -> Unit,
-    contentDescription: String,
     enabled: Boolean,
     onCodeChange: (String) -> Unit
 ) {
@@ -197,7 +192,6 @@ private fun CodeInput(
                 focusRequester.requestFocus()
                 keyboardController()
             }
-            .semantics { this.contentDescription = contentDescription }
     ) {
         BasicTextField(
             value = code,
