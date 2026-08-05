@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  kotlin-and-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Server unit tests
+        run: ./gradlew :server:test
+      - name: PostgreSQL integration tests (Testcontainers)
+        run: ./gradlew :server:integrationTest
+      - name: Android unit tests and debug build
+        run: ./gradlew :app:testDebugUnitTest :app:assembleDebug
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web-app/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+  docker:
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_DB: oyla_ci
+      POSTGRES_USER: oyla_ci
+      POSTGRES_PASSWORD: ci-only-not-a-production-secret
+      JWT_SECRET: ci-only-jwt-secret-with-at-least-32-characters
+      OYLA_SECRET_PEPPER: ci-only-pepper-with-at-least-32-characters
+      JWT_ISSUER: oyla-ci
+      JWT_AUDIENCE: oyla-ci-web
+      JWT_ACCESS_TTL_MINUTES: '15'
+      REFRESH_TOKEN_TTL_DAYS: '30'
+      ACTIVATION_CODE_TTL_MINUTES: '10'
+      DEVICE_ONLINE_WINDOW_SECONDS: '90'
+      BCRYPT_LOG_ROUNDS: '10'
+      OYLA_DOMAIN: ci.oyla.invalid
+      LETSENCRYPT_EMAIL: ci@example.invalid
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate production compose
+        run: docker compose -f deploy/docker-compose.prod.yml config
+      - name: Build production images
+        run: docker compose -f deploy/docker-compose.prod.yml build oyla-server oyla-web oyla-admin

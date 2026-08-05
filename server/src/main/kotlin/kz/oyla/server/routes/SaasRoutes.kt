@@ -32,6 +32,7 @@ import kz.oyla.server.util.ActivationRateLimiter
 fun Route.saasRoutes(service: SaasService, activationRateLimiter: ActivationRateLimiter) {
     route("/api/v1/auth") {
         post("/register-center") {
+            if (!service.publicRegistrationAllowed) throw ApiException.registrationDisabled()
             val auth = service.registerCenter(call.receive<RegisterCenterRequest>(), call.clientIp())
             call.setRefreshCookie(auth.refreshToken)
             call.respond(HttpStatusCode.Created, auth.redacted())

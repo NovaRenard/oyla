@@ -3,9 +3,24 @@ import { ApiError, type ActivationCode, type AuthResponse, type Center, type Dev
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 let accessToken: string | null = null;
 let refreshPromise: Promise<string | null> | null = null;
+let sessionEnded = false;
+const sessionEndListeners = new Set<() => void>();
+
+/** AuthContext owns navigation and cache eviction; the API layer only publishes session state. */
+export function subscribeToSessionEnd(listener: () => void) {
+  sessionEndListeners.add(listener);
+  return () => sessionEndListeners.delete(listener);
+}
+
+function endSession() {
+  tokenStore.clear();
+  if (sessionEnded) return;
+  sessionEnded = true;
+  sessionEndListeners.forEach((listener) => listener());
+}
 
 export const tokenStore = {
-  set(token: string | null) { accessToken = token; },
+  set(token: string | null) { accessToken = token; if (token) sessionEnded = false; },
   clear() { accessToken = null; },
   get() { return accessToken; },
 };
@@ -41,7 +56,7 @@ async function refreshAccessToken(): Promise<string | null> {
         return auth.accessToken;
       })
       .catch(() => {
-        tokenStore.clear();
+        endSession();
         return null;
       })
       .finally(() => { refreshPromise = null; });
@@ -55,7 +70,14 @@ async function authenticated<T>(path: string, options: RequestOptions = {}): Pro
   } catch (error) {
     if (error instanceof ApiError && error.status === 401 && !options.retry) {
       const token = await refreshAccessToken();
-      if (token) return raw<T>(path, { ...options, retry: true });
+      if (token) {
+        try {
+          return await raw<T>(path, { ...options, retry: true });
+        } catch (retryError) {
+          if (retryError instanceof ApiError && retryError.status === 401) endSession();
+          throw retryError;
+        }
+      }
     }
     throw error;
   }
@@ -67,18 +89,13 @@ export const api = {
     tokenStore.set(auth.accessToken);
     return auth;
   },
-  async register(input: { centerName: string; firstName: string; lastName?: string; email: string; password: string }) {
-    const auth = await raw<AuthResponse>("/api/v1/auth/register-center", { method: "POST", body: input, skipAuth: true });
-    tokenStore.set(auth.accessToken);
-    return auth;
-  },
   async restore() {
     const token = await refreshAccessToken();
     return token ? authenticated<MeResponse>("/api/v1/auth/me") : null;
   },
   async logout() {
     await raw<void>("/api/v1/auth/logout", { method: "POST", body: {}, skipAuth: true }).catch(() => undefined);
-    tokenStore.clear();
+    endSession();
   },
   me: () => authenticated<MeResponse>("/api/v1/auth/me"),
   currentCenter: () => authenticated<Center>("/api/v1/centers/current"),
@@ -108,6 +125,7 @@ export function messageForError(error: unknown): string {
     INVALID_ACTIVATION_CODE: "Код подключения истёк или уже недействителен.",
     CONFLICT: "Это действие сейчас невозможно. Обновите страницу и повторите попытку.",
     RATE_LIMITED: "Слишком много попыток. Подождите немного и повторите.",
+    REGISTRATION_DISABLED: "Регистрация центра сейчас недоступна.",
     VALIDATION_ERROR: "Проверьте заполнение полей.",
   };
   return known[error.body.code] ?? "Не удалось выполнить действие. Попробуйте ещё раз.";

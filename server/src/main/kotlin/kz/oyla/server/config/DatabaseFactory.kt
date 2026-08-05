@@ -7,10 +7,15 @@ import org.jetbrains.exposed.sql.Database
 
 object DatabaseFactory {
     fun initialize(): Database {
+        val production = System.getenv("OYLA_ENV")?.equals("production", ignoreCase = true) == true
+        fun databaseValue(name: String, developmentDefault: String): String =
+            System.getenv(name)?.takeIf { it.isNotBlank() } ?: if (production) {
+                throw IllegalStateException("$name must be set when OYLA_ENV=production")
+            } else developmentDefault
         val hikariConfig = HikariConfig().apply {
-            jdbcUrl = System.getenv("DATABASE_URL") ?: "jdbc:postgresql://localhost:5432/oyla"
-            username = System.getenv("DATABASE_USER") ?: "oyla"
-            password = System.getenv("DATABASE_PASSWORD") ?: "oyla"
+            jdbcUrl = databaseValue("DATABASE_URL", "jdbc:postgresql://localhost:5432/oyla")
+            username = databaseValue("DATABASE_USER", "oyla")
+            password = databaseValue("DATABASE_PASSWORD", "oyla")
             driverClassName = "org.postgresql.Driver"
             maximumPoolSize = 8
             minimumIdle = 1

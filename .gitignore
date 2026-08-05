@@ -3,6 +3,12 @@
 /.kotlin/
 /web-app/node_modules/
 /web-app/dist/
+/deploy/.env.prod
+/backups/
+*.apk
+*.aab
+/app/release/
+**/build/
 /local.properties
 /deploy/.env
 /server/.env

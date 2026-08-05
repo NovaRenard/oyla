@@ -51,6 +51,16 @@ class DeviceLifecycleTest {
         assertEquals("Код неверный или срок его действия закончился", (result as DeviceActivationResult.Failure).message)
     }
 
+    @Test fun `already activated tablet explains required unlink`() = runBlocking {
+        val result = DeviceLifecycle(FakeStorage(), FakeGateway(activation = NetworkResult.HttpError(409, "DEVICE_ALREADY_ACTIVATED")), runtime).activate("ABCD2345")
+        assertEquals("Этот планшет уже подключён к центру. Сначала отвяжите его в текущем кабинете", (result as DeviceActivationResult.Failure).message)
+    }
+
+    @Test fun `blocked tablet activation has a safe message`() = runBlocking {
+        val result = DeviceLifecycle(FakeStorage(), FakeGateway(activation = NetworkResult.HttpError(403, "DEVICE_BLOCKED")), runtime).activate("ABCD2345")
+        assertEquals("Этот планшет заблокирован. Обратитесь к администратору текущего центра", (result as DeviceActivationResult.Failure).message)
+    }
+
     @Test fun `network failure does not remove identity`() = runBlocking {
         val storage = FakeStorage(identity())
         val outcome = DeviceLifecycle(storage, FakeGateway(me = NetworkResult.NetworkError), runtime).validateStartup()

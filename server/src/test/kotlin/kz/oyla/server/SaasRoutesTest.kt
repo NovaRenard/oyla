@@ -45,6 +45,21 @@ import org.junit.Test
 class SaasRoutesTest {
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
 
+    @Test fun `public registration is disabled unless explicitly enabled`() = testApplication {
+        application {
+            module(
+                sessionRepository = InMemorySessionRepository(),
+                saasRepository = InMemorySaasRepository(),
+                saasConfig = SaasConfig("test-jwt-secret-that-is-long-enough", "test", "test", Duration.ofMinutes(15), Duration.ofDays(30), Duration.ofMinutes(10), Duration.ofSeconds(90), 10)
+            )
+        }
+        val response = client.post("/api/v1/auth/register-center") {
+            jsonBody("""{"centerName":"Центр","firstName":"Алия","email":"owner@example.com","password":"Password123"}""")
+        }
+        assertEquals(HttpStatusCode.NotFound, response.status)
+        assertEquals("REGISTRATION_DISABLED", errorCode(response))
+    }
+
     @Test fun `registration creates owner membership`() = withServer { repository, _ ->
         val owner = register("Речевой центр", "owner@example.com")
         val centers = client.get("/api/v1/centers") { bearer(owner.accessToken) }
@@ -201,6 +216,63 @@ class SaasRoutesTest {
         assertEquals(1, devices.size)
     }
 
+    @Test fun `active device cannot be moved to another center and code remains pending`() = withServer { _, _ ->
+        val a = register("A", "move-active-a@example.com")
+        val b = register("B", "move-active-b@example.com")
+        val original = activate(createCode(a.accessToken, "A tablet").activationCode, "move-active-uid")
+        val codeB = createCode(b.accessToken, "B tablet")
+
+        val attempt = activateResponse(codeB.activationCode, "move-active-uid")
+        assertEquals(HttpStatusCode.Conflict, attempt.status)
+        assertEquals("DEVICE_ALREADY_ACTIVATED", errorCode(attempt))
+        assertTrue(client.get("/api/v1/devices") { bearer(a.accessToken) }.bodyAsText().contains(original.deviceId))
+        assertEquals("[]", client.get("/api/v1/devices") { bearer(b.accessToken) }.bodyAsText())
+        assertTrue(client.get("/api/v1/devices/activation-codes") { bearer(b.accessToken) }.bodyAsText().contains("PENDING"))
+    }
+
+    @Test fun `blocked device cannot be moved to another center and code remains pending`() = withServer { _, _ ->
+        val a = register("A", "move-blocked-a@example.com")
+        val b = register("B", "move-blocked-b@example.com")
+        val original = activate(createCode(a.accessToken, "A tablet").activationCode, "move-blocked-uid")
+        assertEquals(HttpStatusCode.OK, client.patch("/api/v1/devices/${original.deviceId}") {
+            bearer(a.accessToken); jsonBody("""{"status":"BLOCKED"}""")
+        }.status)
+        val codeB = createCode(b.accessToken, "B tablet")
+        val attempt = activateResponse(codeB.activationCode, "move-blocked-uid")
+        assertEquals(HttpStatusCode.Forbidden, attempt.status)
+        assertEquals("DEVICE_BLOCKED", errorCode(attempt))
+        assertTrue(client.get("/api/v1/devices/activation-codes") { bearer(b.accessToken) }.bodyAsText().contains("PENDING"))
+    }
+
+    @Test fun `unlinked device can move to another center and old token stops working`() = withServer { _, _ ->
+        val a = register("A", "move-unlinked-a@example.com")
+        val b = register("B", "move-unlinked-b@example.com")
+        val original = activate(createCode(a.accessToken, "A tablet").activationCode, "move-unlinked-uid")
+        assertEquals(HttpStatusCode.NoContent, client.post("/api/v1/devices/${original.deviceId}/unlink") { bearer(a.accessToken) }.status)
+
+        val replacement = activate(createCode(b.accessToken, "B tablet").activationCode, "move-unlinked-uid")
+        assertEquals(original.deviceId, replacement.deviceId)
+        assertEquals(HttpStatusCode.Unauthorized, client.get("/api/v1/device-auth/me") { bearer(original.deviceToken) }.status)
+        assertEquals(HttpStatusCode.OK, client.get("/api/v1/device-auth/me") { bearer(replacement.deviceToken) }.status)
+        assertTrue(client.get("/api/v1/devices") { bearer(b.accessToken) }.bodyAsText().contains(original.deviceId))
+    }
+
+    @Test fun `parallel attempts cannot move an already active device or duplicate it`() = withServer { _, _ ->
+        val a = register("A", "parallel-move-a@example.com")
+        val b = register("B", "parallel-move-b@example.com")
+        val original = activate(createCode(a.accessToken, "A tablet").activationCode, "parallel-move-uid")
+        val codeB = createCode(b.accessToken, "B tablet")
+        val responses = coroutineScope { listOf(
+            async { activateResponse(codeB.activationCode, "parallel-move-uid") },
+            async { activateResponse(codeB.activationCode, "parallel-move-uid") }
+        ).awaitAll() }
+        assertTrue(responses.all { it.status == HttpStatusCode.Conflict })
+        assertEquals(1, json.decodeFromString<List<DeviceDto>>(client.get("/api/v1/devices") { bearer(a.accessToken) }.bodyAsText()).size)
+        assertEquals("[]", client.get("/api/v1/devices") { bearer(b.accessToken) }.bodyAsText())
+        assertTrue(client.get("/api/v1/devices/activation-codes") { bearer(b.accessToken) }.bodyAsText().contains("PENDING"))
+        assertEquals(HttpStatusCode.OK, client.get("/api/v1/device-auth/me") { bearer(original.deviceToken) }.status)
+    }
+
     @Test fun `foreign center selection does not change tenant context`() = withServer { _, _ ->
         val a = register("A", "tenant-a@example.com")
         val b = register("B", "tenant-b@example.com")
@@ -218,7 +290,7 @@ class SaasRoutesTest {
                 sessionRepository = InMemorySessionRepository(),
                 clock = clock,
                 saasRepository = repository,
-                saasConfig = SaasConfig("test-jwt-secret-that-is-long-enough", "test", "test", Duration.ofMinutes(15), Duration.ofDays(30), Duration.ofMinutes(10), Duration.ofSeconds(90), 10)
+                saasConfig = SaasConfig("test-jwt-secret-that-is-long-enough", "test", "test", Duration.ofMinutes(15), Duration.ofDays(30), Duration.ofMinutes(10), Duration.ofSeconds(90), 10, allowPublicRegistration = true)
             )
         }
         block(repository, clock)

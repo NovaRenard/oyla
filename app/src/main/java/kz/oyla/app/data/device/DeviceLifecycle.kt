@@ -90,6 +90,8 @@ class DeviceLifecycle(
     )
 
     private fun NetworkResult.HttpError.toActivationMessage(): String = when {
+        errorCode == "DEVICE_ALREADY_ACTIVATED" -> "Этот планшет уже подключён к центру. Сначала отвяжите его в текущем кабинете"
+        errorCode == "DEVICE_BLOCKED" -> "Этот планшет заблокирован. Обратитесь к администратору текущего центра"
         errorCode == "INVALID_ACTIVATION_CODE" -> "Код неверный или срок его действия закончился"
         errorCode == "RATE_LIMITED" || statusCode == 429 -> "Слишком много попыток. Подождите немного и повторите"
         errorCode == "CONFLICT" || statusCode == 409 -> "Это устройство уже подключено. Обратитесь к администратору"

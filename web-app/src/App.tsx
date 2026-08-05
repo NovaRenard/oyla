@@ -1,7 +1,7 @@
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./auth/AuthContext";
 import { AppLayout } from "./features/layout/AppLayout";
-import { LoginPage, RegisterPage } from "./features/auth/AuthPages";
+import { LoginPage } from "./features/auth/AuthPages";
 import { DashboardPage } from "./features/dashboard/DashboardPage";
 import { DeviceDetailsPage, DevicesPage } from "./features/devices/DevicesPages";
 import { SettingsPage } from "./features/settings/SettingsPage";
@@ -21,7 +21,7 @@ function GuestRoute() {
 
 export function App() {
   return <Routes>
-    <Route element={<GuestRoute />}><Route path="/login" element={<LoginPage />} /><Route path="/register" element={<RegisterPage />} /></Route>
+    <Route element={<GuestRoute />}><Route path="/login" element={<LoginPage />} /><Route path="/register" element={<Navigate to="/login" replace />} /></Route>
     <Route element={<ProtectedRoute />}><Route element={<AppLayout />}>
       <Route path="/" element={<Navigate to="/overview" replace />} />
       <Route path="/overview" element={<DashboardPage />} />

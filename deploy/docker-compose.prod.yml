@@ -1,0 +1,117 @@
+services:
+  oyla-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - oyla-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks: [oyla-internal]
+
+  oyla-server:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    environment:
+      OYLA_ENV: production
+      PORT: 8080
+      DATABASE_URL: jdbc:postgresql://oyla-db:5432/${POSTGRES_DB:?Set POSTGRES_DB}
+      DATABASE_USER: ${POSTGRES_USER:?Set POSTGRES_USER}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
+      OYLA_SECRET_PEPPER: ${OYLA_SECRET_PEPPER:?Set OYLA_SECRET_PEPPER}
+      JWT_ISSUER: ${JWT_ISSUER:?Set JWT_ISSUER}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:?Set JWT_AUDIENCE}
+      JWT_ACCESS_TTL_MINUTES: ${JWT_ACCESS_TTL_MINUTES:?Set JWT_ACCESS_TTL_MINUTES}
+      REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:?Set REFRESH_TOKEN_TTL_DAYS}
+      ACTIVATION_CODE_TTL_MINUTES: ${ACTIVATION_CODE_TTL_MINUTES:?Set ACTIVATION_CODE_TTL_MINUTES}
+      DEVICE_ONLINE_WINDOW_SECONDS: ${DEVICE_ONLINE_WINDOW_SECONDS:?Set DEVICE_ONLINE_WINDOW_SECONDS}
+      BCRYPT_LOG_ROUNDS: ${BCRYPT_LOG_ROUNDS:?Set BCRYPT_LOG_ROUNDS}
+      OYLA_COOKIE_SECURE: "true"
+      ALLOW_PUBLIC_REGISTRATION: "false"
+    depends_on:
+      oyla-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:8080/health | grep -q '\"status\":\"ok\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [oyla-internal]
+
+  oyla-web:
+    build:
+      context: ../web-app
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [oyla-internal]
+
+  reverse-proxy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    environment:
+      OYLA_DOMAIN: ${OYLA_DOMAIN:?Set OYLA_DOMAIN}
+      LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL:?Set LETSENCRYPT_EMAIL}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - oyla-caddy-data:/data
+      - oyla-caddy-config:/config
+    depends_on:
+      oyla-server:
+        condition: service_healthy
+      oyla-web:
+        condition: service_healthy
+    networks: [oyla-internal]
+
+  oyla-admin:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    environment:
+      OYLA_ENV: production
+      DATABASE_URL: jdbc:postgresql://oyla-db:5432/${POSTGRES_DB:?Set POSTGRES_DB}
+      DATABASE_USER: ${POSTGRES_USER:?Set POSTGRES_USER}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
+      OYLA_SECRET_PEPPER: ${OYLA_SECRET_PEPPER:?Set OYLA_SECRET_PEPPER}
+      JWT_ISSUER: ${JWT_ISSUER:?Set JWT_ISSUER}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:?Set JWT_AUDIENCE}
+      JWT_ACCESS_TTL_MINUTES: ${JWT_ACCESS_TTL_MINUTES:?Set JWT_ACCESS_TTL_MINUTES}
+      REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:?Set REFRESH_TOKEN_TTL_DAYS}
+      ACTIVATION_CODE_TTL_MINUTES: ${ACTIVATION_CODE_TTL_MINUTES:?Set ACTIVATION_CODE_TTL_MINUTES}
+      DEVICE_ONLINE_WINDOW_SECONDS: ${DEVICE_ONLINE_WINDOW_SECONDS:?Set DEVICE_ONLINE_WINDOW_SECONDS}
+      BCRYPT_LOG_ROUNDS: ${BCRYPT_LOG_ROUNDS:?Set BCRYPT_LOG_ROUNDS}
+      OYLA_COOKIE_SECURE: "true"
+      ALLOW_PUBLIC_REGISTRATION: "false"
+      # Deliberately inherited only for one-shot automation; do not add it to .env.prod.
+      OYLA_ADMIN_INITIAL_PASSWORD: ${OYLA_ADMIN_INITIAL_PASSWORD:-}
+    depends_on:
+      oyla-db:
+        condition: service_healthy
+    networks: [oyla-internal]
+    profiles: [admin]
+
+volumes:
+  oyla-postgres-data:
+  oyla-caddy-data:
+  oyla-caddy-config:
+
+networks:
+  oyla-internal:
+    driver: bridge

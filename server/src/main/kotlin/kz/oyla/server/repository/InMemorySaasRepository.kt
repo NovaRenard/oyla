@@ -60,6 +60,15 @@ class InMemorySaasRepository : SaasRepository {
         val token = refreshTokens.values.firstOrNull { it.tokenHash == tokenHash && it.revokedAt == null } ?: return@synchronized false
         refreshTokens[token.id] = token.copy(revokedAt = now); true
     }
+    override suspend fun resetUserPassword(userId: UUID, passwordHash: String, now: Instant, audit: AuditLogRecord) = synchronized(this) {
+        val user = users[userId] ?: return@synchronized false
+        users[userId] = user.copy(passwordHash = passwordHash, updatedAt = now)
+        refreshTokens.values.filter { it.userId == userId && it.revokedAt == null }.forEach { token ->
+            refreshTokens[token.id] = token.copy(revokedAt = now)
+        }
+        audits += audit
+        true
+    }
 
     override suspend fun createActivationCode(record: DeviceActivationCodeRecord, audit: AuditLogRecord) = synchronized(this) {
         if (codes.values.any { it.codeHash == record.codeHash }) return@synchronized false
@@ -76,13 +85,19 @@ class InMemorySaasRepository : SaasRepository {
         codes[id] = code.copy(status = ActivationCodeStatus.CANCELLED); audits += audit; true
     }
     override suspend fun activateDevice(codeHash: String, deviceUid: String, deviceTokenHash: String, appVersion: String?, androidVersion: String?, model: String?, now: Instant, ipAddress: String?): DeviceActivationResult = synchronized(this) {
+        val existing = devices.values.firstOrNull { it.deviceUid == deviceUid }
+        when (existing?.status) {
+            DeviceStatus.ACTIVE -> return@synchronized DeviceActivationResult.AlreadyActivated
+            DeviceStatus.BLOCKED -> return@synchronized DeviceActivationResult.DeviceBlocked
+            DeviceStatus.UNLINKED, null -> Unit
+        }
         val code = codes.values.firstOrNull { it.codeHash == codeHash } ?: return@synchronized DeviceActivationResult.Invalid
         if (code.status == ActivationCodeStatus.USED) return@synchronized DeviceActivationResult.Used
         if (code.status != ActivationCodeStatus.PENDING) return@synchronized DeviceActivationResult.Invalid
         if (code.expiresAt <= now) { codes[code.id] = code.copy(status = ActivationCodeStatus.EXPIRED); return@synchronized DeviceActivationResult.Expired }
         val center = centers[code.centerId] ?: return@synchronized DeviceActivationResult.Invalid
         if (center.status != CenterStatus.ACTIVE) return@synchronized DeviceActivationResult.CenterUnavailable
-        val device = devices.values.firstOrNull { it.deviceUid == deviceUid }?.copy(
+        val device = existing?.copy(
             centerId = code.centerId, name = code.deviceName, role = code.deviceRole, status = DeviceStatus.ACTIVE,
             tokenHash = deviceTokenHash, tokenRevokedAt = null, appVersion = appVersion, androidVersion = androidVersion,
             model = model, lastSeenAt = now, activatedAt = now, updatedAt = now

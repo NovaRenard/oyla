@@ -1,0 +1,47 @@
+{
+    email {$LETSENCRYPT_EMAIL}
+}
+
+{$OYLA_DOMAIN} {
+    encode zstd gzip
+
+    header {
+        -Server
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        X-Frame-Options "DENY"
+        Content-Security-Policy "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' wss: https:"
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    }
+
+    request_body {
+        max_size 2MB
+    }
+
+    @hidden path_regexp hidden ^/\.
+    respond @hidden 404
+
+    handle /health {
+        reverse_proxy oyla-server:8080 {
+            header_up Host {host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    handle /api/* {
+        reverse_proxy oyla-server:8080 {
+            header_up Host {host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            transport http {
+                read_timeout 65s
+                write_timeout 65s
+            }
+        }
+    }
+
+    handle {
+        reverse_proxy oyla-web:8080
+    }
+}

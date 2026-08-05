@@ -21,6 +21,9 @@ data class DeviceListFilter(
 
 sealed interface DeviceActivationResult {
     data class Activated(val device: DeviceRecord, val center: CenterRecord) : DeviceActivationResult
+    /** An existing tablet must be explicitly unlinked before another center can claim it. */
+    data object AlreadyActivated : DeviceActivationResult
+    data object DeviceBlocked : DeviceActivationResult
     data object Invalid : DeviceActivationResult
     data object Expired : DeviceActivationResult
     data object Used : DeviceActivationResult
@@ -49,6 +52,8 @@ interface SaasRepository {
     /** Returns false if token was already revoked or expired; otherwise creates the replacement atomically. */
     suspend fun rotateRefreshToken(oldHash: String, replacement: RefreshTokenRecord, now: Instant): Boolean
     suspend fun revokeRefreshToken(tokenHash: String, now: Instant): Boolean
+    /** Atomically changes a password, revokes all existing browser sessions and writes the audit event. */
+    suspend fun resetUserPassword(userId: UUID, passwordHash: String, now: Instant, audit: AuditLogRecord): Boolean
 
     suspend fun createActivationCode(record: DeviceActivationCodeRecord, audit: AuditLogRecord): Boolean
     suspend fun listActiveActivationCodes(centerId: UUID, now: Instant): List<DeviceActivationCodeRecord>

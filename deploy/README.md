@@ -1,7 +1,6 @@
-# Oyla server in Docker
+# Oyla Docker deployment
 
-Before the first run, copy `.env.example` to `.env` and replace the database password,
-`JWT_SECRET`, and `OYLA_SECRET_PEPPER` with independent high-entropy values.
+`docker-compose.yml` remains the local development stack. Production uses `docker-compose.prod.yml`: PostgreSQL, Ktor and web are private services and Caddy is the only public service on 80/443.
 
 ```powershell
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
@@ -10,3 +9,5 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env down
 ```
 
 The local health endpoint is `http://localhost:8083/health`.
+
+For production, copy `.env.prod.example` to `.env.prod`, fill every placeholder, and follow [the production runbook](../docs/production-deployment.md). Never commit `.env.prod`; keep `OYLA_COOKIE_SECURE=true` and `ALLOW_PUBLIC_REGISTRATION=false`.

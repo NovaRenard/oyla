@@ -61,19 +61,36 @@ data class SaasConfig(
     val refreshTtl: Duration,
     val activationCodeTtl: Duration,
     val onlineWindow: Duration,
-    val bcryptRounds: Int
+    val bcryptRounds: Int,
+    val allowPublicRegistration: Boolean = false,
+    val environment: String = "development"
 ) {
     companion object {
-        fun fromEnvironment() = SaasConfig(
-            jwtSecret = System.getenv("JWT_SECRET") ?: "development-only-change-me-before-production-oyla",
+        fun fromEnvironment(): SaasConfig {
+            val environment = System.getenv("OYLA_ENV")?.trim()?.lowercase(Locale.ROOT) ?: "development"
+            val production = environment == "production"
+            val jwtSecret = System.getenv("JWT_SECRET") ?: if (!production) "development-only-change-me-before-production-oyla" else missing("JWT_SECRET")
+            val pepper = System.getenv("OYLA_SECRET_PEPPER") ?: if (!production) "development-only-change-me-before-production-pepper" else missing("OYLA_SECRET_PEPPER")
+            // Force validation here, before Ktor starts accepting requests. SecretGenerator uses the same variable.
+            require(pepper.length >= 32) { "OYLA_SECRET_PEPPER must be at least 32 characters" }
+            require(!production || jwtSecret.length >= 32) { "JWT_SECRET must be at least 32 characters in production" }
+            require(!production || System.getenv("OYLA_COOKIE_SECURE")?.toBooleanStrictOrNull() == true) {
+                "OYLA_COOKIE_SECURE=true is required in production"
+            }
+            return SaasConfig(
+            jwtSecret = jwtSecret,
             jwtIssuer = System.getenv("JWT_ISSUER") ?: "oyla-server",
             jwtAudience = System.getenv("JWT_AUDIENCE") ?: "oyla-web",
             accessTtl = Duration.ofMinutes(envLong("JWT_ACCESS_TTL_MINUTES", 15, 1, 120)),
             refreshTtl = Duration.ofDays(envLong("REFRESH_TOKEN_TTL_DAYS", 30, 1, 180)),
             activationCodeTtl = Duration.ofMinutes(envLong("ACTIVATION_CODE_TTL_MINUTES", 10, 1, 60)),
             onlineWindow = Duration.ofSeconds(envLong("DEVICE_ONLINE_WINDOW_SECONDS", 90, 30, 600)),
-            bcryptRounds = envLong("BCRYPT_LOG_ROUNDS", 12, 10, 14).toInt()
+            bcryptRounds = envLong("BCRYPT_LOG_ROUNDS", 12, 10, 14).toInt(),
+            allowPublicRegistration = !production && (System.getenv("ALLOW_PUBLIC_REGISTRATION")?.toBooleanStrictOrNull() ?: false),
+            environment = environment
         )
+        }
+        private fun missing(name: String): Nothing = throw IllegalStateException("$name must be set when OYLA_ENV=production")
         private fun envLong(name: String, default: Long, min: Long, max: Long) =
             (System.getenv(name)?.toLongOrNull() ?: default).coerceIn(min, max)
     }
@@ -81,6 +98,7 @@ data class SaasConfig(
 
 data class AccessToken(val value: String, val expiresAt: Instant)
 data class CenterContext(val user: UserRecord, val center: CenterRecord, val membership: CenterMembershipRecord)
+data class AdminCenterResult(val centerId: UUID, val centerName: String, val ownerEmail: String)
 
 class SaasService(
     private val repository: SaasRepository,
@@ -90,20 +108,51 @@ class SaasService(
 ) {
     private val algorithm = Algorithm.HMAC512(config.jwtSecret)
     val jwtVerifier: JWTVerifier = JWT.require(algorithm).withIssuer(config.jwtIssuer).withAudience(config.jwtAudience).build()
+    val publicRegistrationAllowed: Boolean get() = config.allowPublicRegistration
 
     suspend fun registerCenter(request: RegisterCenterRequest, ipAddress: String?): AuthResponse {
-        val name = request.centerName.cleanRequired(160, "Название центра")
-        val firstName = request.firstName.cleanRequired(100, "Имя")
-        val lastName = request.lastName?.cleanOptional(100, "Фамилия")
-        val email = request.email.normalizeEmail()
-        validatePassword(request.password)
+        if (!config.allowPublicRegistration) throw ApiException.registrationDisabled()
+        val created = provisionCenter(
+            centerName = request.centerName,
+            firstName = request.firstName,
+            lastName = request.lastName,
+            emailInput = request.email,
+            password = request.password,
+            timezoneInput = "Asia/Almaty",
+            auditAction = "CENTER_CREATED",
+            auditActorType = AuditActorType.USER,
+            ipAddress = ipAddress
+        )
+        return issueAuthResponse(created.user, listOf(UserCenterMembership(created.membership, created.center)), created.center)
+    }
+
+    /** Shared provisioning path used by the disabled-by-default public endpoint and the admin CLI. */
+    suspend fun createCenterByAdmin(
+        centerName: String,
+        firstName: String,
+        lastName: String?,
+        email: String,
+        password: String,
+        timezone: String
+    ): AdminCenterResult {
+        val created = provisionCenter(centerName, firstName, lastName, email, password, timezone,
+            "CENTER_CREATED_BY_ADMIN", AuditActorType.SYSTEM, null)
+        return AdminCenterResult(created.center.id, created.center.name, created.user.email)
+    }
+
+    /** Returns false for an unknown user so a production CLI need not disclose account existence. */
+    suspend fun resetPasswordByAdmin(emailInput: String, password: String): Boolean {
+        val email = emailInput.normalizeEmail()
+        validatePassword(password)
+        val user = repository.findUserByEmail(email) ?: return false
         val now = clock.instant()
-        val user = UserRecord(UUID.randomUUID(), email, hashPassword(request.password), firstName, lastName, UserStatus.ACTIVE, now, now, null)
-        val center = CenterRecord(UUID.randomUUID(), name, slugFor(name), CenterStatus.ACTIVE, "Asia/Almaty", now, now)
-        val membership = CenterMembershipRecord(UUID.randomUUID(), center.id, user.id, MembershipRole.OWNER, MembershipStatus.ACTIVE, now, now)
-        val audit = AuditLogRecord(UUID.randomUUID(), center.id, AuditActorType.USER, user.id, "CENTER_CREATED", "CENTER", center.id, "{}", ipAddress, now)
-        if (!repository.registerCenter(center, user, membership, audit)) throw ApiException.conflict("Пользователь с таким email уже существует")
-        return issueAuthResponse(user, listOf(UserCenterMembership(membership, center)), center)
+        val centerId = repository.listCentersForUser(user.id).firstActiveCenter()?.id
+        return repository.resetUserPassword(
+            user.id,
+            hashPassword(password),
+            now,
+            AuditLogRecord(UUID.randomUUID(), centerId, AuditActorType.SYSTEM, null, "USER_PASSWORD_RESET_BY_ADMIN", "USER", user.id, "{}", null, now)
+        )
     }
 
     suspend fun login(request: LoginRequest, ipAddress: String?): AuthResponse {
@@ -248,6 +297,14 @@ class SaasService(
             request.appVersion?.cleanOptional(80, "Версия приложения"), request.androidVersion?.cleanOptional(80, "Версия Android"), request.model?.cleanOptional(160, "Модель"), now, ipAddress)) {
             is DeviceActivationResult.Activated -> ActivateDeviceResponse(result.device.id.toString(), result.center.id.toString(), result.center.name,
                 result.device.name, result.device.role, rawDeviceToken, now.toString())
+            DeviceActivationResult.AlreadyActivated -> {
+                failedActivation(ipAddress)
+                throw ApiException.deviceAlreadyActivated()
+            }
+            DeviceActivationResult.DeviceBlocked -> {
+                failedActivation(ipAddress)
+                throw ApiException.deviceBlocked()
+            }
             else -> {
                 failedActivation(ipAddress)
                 // One public response avoids using activation-code status as an enumeration oracle.
@@ -302,6 +359,33 @@ class SaasService(
         if (rawRefreshToken == null) repository.createRefreshToken(RefreshTokenRecord(UUID.randomUUID(), user.id, secrets.secretHash(refresh), clock.instant().plus(config.refreshTtl), clock.instant(), null))
         return AuthResponse(user.toDto(), centers.map { it.toDto() }, activeCenter?.toDto(), access.value, refresh, access.expiresAt.toString())
     }
+    private suspend fun provisionCenter(
+        centerName: String,
+        firstName: String,
+        lastName: String?,
+        emailInput: String,
+        password: String,
+        timezoneInput: String,
+        auditAction: String,
+        auditActorType: AuditActorType,
+        ipAddress: String?
+    ): ProvisionedCenter {
+        val name = centerName.cleanRequired(160, "Название центра")
+        val ownerFirstName = firstName.cleanRequired(100, "Имя")
+        val ownerLastName = lastName?.cleanOptional(100, "Фамилия")
+        val email = emailInput.normalizeEmail()
+        val timezone = timezoneInput.cleanRequired(64, "Часовой пояс")
+        if (runCatching { ZoneId.of(timezone) }.isFailure) throw ApiException.validation("Некорректный часовой пояс")
+        validatePassword(password)
+        val now = clock.instant()
+        val user = UserRecord(UUID.randomUUID(), email, hashPassword(password), ownerFirstName, ownerLastName, UserStatus.ACTIVE, now, now, null)
+        val center = CenterRecord(UUID.randomUUID(), name, slugFor(name), CenterStatus.ACTIVE, timezone, now, now)
+        val membership = CenterMembershipRecord(UUID.randomUUID(), center.id, user.id, MembershipRole.OWNER, MembershipStatus.ACTIVE, now, now)
+        val audit = AuditLogRecord(UUID.randomUUID(), center.id, auditActorType, if (auditActorType == AuditActorType.USER) user.id else null,
+            auditAction, "CENTER", center.id, "{}", ipAddress, now)
+        if (!repository.registerCenter(center, user, membership, audit)) throw ApiException.conflict("Пользователь с таким email уже существует")
+        return ProvisionedCenter(user, center, membership)
+    }
 
     private suspend fun requireActiveUser(userId: UUID): UserRecord = repository.findUserById(userId)?.takeIf { it.status == UserStatus.ACTIVE } ?: throw ApiException.unauthorized()
     private suspend fun requireActiveDevice(principalDevice: DeviceRecord): DeviceRecord {
@@ -339,4 +423,6 @@ class SaasService(
     private fun UserCenterMembership.toDto() = CenterMembershipDto(center.toDto(), membership.role, membership.status)
     private fun DeviceRecord.toDto(now: Instant) = DeviceDto(id.toString(), name, role, status, appVersion, androidVersion, model, lastSeenAt?.toString(), activatedAt?.toString(), lastSeenAt?.isAfter(now.minus(config.onlineWindow)) == true)
     private fun DeviceActivationCodeRecord.toDto() = ActivationCodeDto(id.toString(), deviceName, deviceRole, status, expiresAt.toString(), createdAt.toString())
+
+    private data class ProvisionedCenter(val user: UserRecord, val center: CenterRecord, val membership: CenterMembershipRecord)
 }

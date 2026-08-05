@@ -116,6 +116,17 @@ class DatabaseSaasRepository : SaasRepository {
             it.setInstant(1, now); it.setString(2, tokenHash); it.executeUpdate() == 1
         }
     }
+    override suspend fun resetUserPassword(userId: UUID, passwordHash: String, now: Instant, audit: AuditLogRecord): Boolean = database {
+        val updated = connection.prepareStatement("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?").use {
+            it.setString(1, passwordHash); it.setInstant(2, now); it.setObject(3, userId); it.executeUpdate() == 1
+        }
+        if (!updated) return@database false
+        connection.prepareStatement("UPDATE refresh_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL").use {
+            it.setInstant(1, now); it.setObject(2, userId); it.executeUpdate()
+        }
+        insertAudit(audit)
+        true
+    }
 
     override suspend fun createActivationCode(record: DeviceActivationCodeRecord, audit: AuditLogRecord): Boolean = database {
         connection.prepareStatement(
@@ -153,6 +164,19 @@ class DatabaseSaasRepository : SaasRepository {
         cancelled
     }
     override suspend fun activateDevice(codeHash: String, deviceUid: String, deviceTokenHash: String, appVersion: String?, androidVersion: String?, model: String?, now: Instant, ipAddress: String?): DeviceActivationResult = database {
+        // A transaction-scoped advisory lock makes a device_uid a serialization point even when
+        // two different activation codes are submitted concurrently for a brand-new install.
+        connection.prepareStatement("SELECT pg_advisory_xact_lock(hashtext(?))").use { statement ->
+            statement.setString(1, deviceUid); statement.execute()
+        }
+        val existing = connection.findDevice("SELECT * FROM devices WHERE device_uid = ? FOR UPDATE") { setString(1, deviceUid) }
+        // Do this before looking at the supplied code. A tablet that has not been unlinked does
+        // not participate in a different center's activation workflow at all.
+        when (existing?.status) {
+            DeviceStatus.ACTIVE -> return@database DeviceActivationResult.AlreadyActivated
+            DeviceStatus.BLOCKED -> return@database DeviceActivationResult.DeviceBlocked
+            DeviceStatus.UNLINKED, null -> Unit
+        }
         val code = connection.findActivationCode(
             "SELECT * FROM device_activation_codes WHERE code_hash = ? FOR UPDATE"
         ) { setString(1, codeHash) } ?: return@database DeviceActivationResult.Invalid
@@ -169,11 +193,10 @@ class DatabaseSaasRepository : SaasRepository {
             ?: return@database DeviceActivationResult.Invalid
         if (center.status != CenterStatus.ACTIVE) return@database DeviceActivationResult.CenterUnavailable
 
-        val existing = connection.findDevice("SELECT * FROM devices WHERE device_uid = ? FOR UPDATE") { setString(1, deviceUid) }
         val device = if (existing == null) {
             DeviceRecord(UUID.randomUUID(), center.id, code.deviceName, code.deviceRole, DeviceStatus.ACTIVE, deviceUid,
                 deviceTokenHash, null, appVersion, androidVersion, model, now, now, now, now).also(::insertDevice)
-        } else {
+        } else { // only an explicitly UNLINKED record may be reactivated and move to another center
             existing.copy(centerId = center.id, name = code.deviceName, role = code.deviceRole, status = DeviceStatus.ACTIVE,
                 tokenHash = deviceTokenHash, tokenRevokedAt = null, appVersion = appVersion, androidVersion = androidVersion,
                 model = model, lastSeenAt = now, activatedAt = now, updatedAt = now).also(::replaceActivatedDevice)

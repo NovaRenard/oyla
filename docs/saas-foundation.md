@@ -18,11 +18,13 @@ Flyway migration `V4__create_saas_foundation.sql` introduces:
 - `device_activation_codes`: hashed one-time 8-character activation codes with PENDING, USED, EXPIRED, or CANCELLED state.
 - `audit_logs`: non-secret audit metadata for center, auth, device, and activation events.
 
+`V5__harden_device_identity.sql` makes `device_uid` and the device-token hash mandatory for every device record and adds an explicit UID lookup index.
+
 OWNER and ADMIN can edit the center, create/cancel activation codes, update devices, block/unblock, and unlink them. METHODIST and SPECIALIST have read-only access to the currently implemented device list and cannot create codes. No membership-management endpoint is included yet.
 
 ## Web authentication
 
-`POST /api/v1/auth/register-center` creates a center, active owner user, active OWNER membership, and a refresh-token session in one database transaction. Login accepts a case-insensitive email and stores it lowercase. Passwords use BCrypt (default cost 12; test cost 10). For browser clients refresh tokens are set only in the `oyla_refresh` HttpOnly, SameSite=Lax cookie; the JSON response redacts it and the web client keeps only the short-lived access token in memory.
+`POST /api/v1/auth/register-center` is disabled by default (`ALLOW_PUBLIC_REGISTRATION=false`) and always disabled in the production compose stack. When explicitly enabled for controlled tests/dev, it uses the same shared center-provisioning service as `oyla-admin create-center`: one transaction creates center, active owner user, active OWNER membership and audit data. Login accepts a case-insensitive email and stores it lowercase. Passwords use BCrypt (default cost 12; test cost 10). For browser clients refresh tokens are set only in the `oyla_refresh` HttpOnly, Secure-in-production, SameSite=Lax cookie; the JSON response redacts it and the web client keeps only the short-lived access token in memory.
 
 Access JWTs are HMAC-512 signed and expire after 15 minutes by default. They carry user ID and the selected active center. Refresh tokens expire after 30 days by default, are high-entropy random values, are stored only as HMAC hashes, and rotate on `POST /api/v1/auth/refresh`. `POST /api/v1/auth/logout` revokes a supplied refresh token.
 
@@ -32,7 +34,7 @@ Set `JWT_SECRET` and a separate `OYLA_SECRET_PEPPER` to independent high-entropy
 
 An OWNER or ADMIN creates an 8-character code from an alphabet without ambiguous `I`, `O`, `0`, or `1`. The only response that contains the full code is the creation response. PostgreSQL stores an HMAC hash, and the code expires after 10 minutes by default.
 
-`POST /api/v1/device-auth/activate` normalizes the code and, in one transaction, locks the code row, validates it, creates or reactivates the unique `device_uid`, consumes the code, writes audit data, and stores only the hash of a newly generated device token. A second use is rejected. Invalid, expired, cancelled, and already-used codes return the same public `INVALID_ACTIVATION_CODE` response to avoid code-status enumeration.
+`POST /api/v1/device-auth/activate` serializes by `device_uid` and locks the code row in one PostgreSQL transaction. A new UID creates a device. Only an explicitly `UNLINKED` UID may be reactivated (and may move to a new center); it receives a new device-token hash, so the old token no longer authenticates. `ACTIVE` UIDs return `DEVICE_ALREADY_ACTIVATED`, while `BLOCKED` UIDs return `DEVICE_BLOCKED`; neither path changes center ownership or consumes the submitted code. The error does not disclose the current center. Invalid, expired, cancelled, and already-used codes retain the shared `INVALID_ACTIVATION_CODE` response to avoid code-status enumeration.
 
 Subsequent device calls use `Authorization: Bearer <device token>` and the dedicated Ktor `device-token` authentication provider. A blocked device receives `DEVICE_BLOCKED`; an unlinked device receives `DEVICE_UNLINKED`. Unlinking marks the existing token revoked, so it cannot access device functions. A heartbeat updates version/model and `last_seen_at`; `isOnline` is computed as `last_seen_at` less than 90 seconds ago, never stored as a boolean.
 
@@ -42,7 +44,7 @@ Public activation has an in-process sliding-window limit of five attempts per mi
 
 | Area | Endpoints |
 | --- | --- |
-| Web auth | `POST /api/v1/auth/register-center`, `login`, `refresh`, `logout`; `GET /api/v1/auth/me` |
+| Web auth | `POST /api/v1/auth/login`, `refresh`, `logout`; `GET /api/v1/auth/me` (`register-center` is controlled by `ALLOW_PUBLIC_REGISTRATION`) |
 | Centers | `GET /api/v1/centers`, `GET/PATCH /api/v1/centers/current`, `POST /api/v1/centers/{centerId}/select` |
 | Web devices | `GET /api/v1/devices`, `GET/PATCH /api/v1/devices/{deviceId}`, `POST /api/v1/devices/{deviceId}/unlink` |
 | Activation codes | `POST/GET /api/v1/devices/activation-codes`, `DELETE /api/v1/devices/activation-codes/{id}` |
@@ -81,7 +83,8 @@ For a non-Docker local server, set `DATABASE_URL`, `DATABASE_USER`, `DATABASE_PA
 ## curl examples
 
 ```bash
-# Register owner and center; persist the HttpOnly-style refresh cookie in curl's cookie jar.
+# Development/test only: first set ALLOW_PUBLIC_REGISTRATION=true, then register an owner
+# and center and persist the HttpOnly-style refresh cookie in curl's cookie jar.
 curl -c cookies.txt -X POST http://localhost:8083/api/v1/auth/register-center \
   -H 'Content-Type: application/json' \
   -d '{"centerName":"Центр речи","firstName":"Алия","lastName":"Серикова","email":"aliya@example.com","password":"Password123"}'
@@ -122,7 +125,7 @@ Run the server test suite with JDK 21:
 ./gradlew :server:test
 ```
 
-The route tests use the project’s existing in-memory repository pattern, including synchronization for the concurrent activation test. Production activation uses PostgreSQL row locking (`SELECT ... FOR UPDATE`) within the same transaction. Run the Docker stack against an empty PostgreSQL volume before release to verify Flyway on the target database engine.
+The route tests use the project’s existing in-memory repository pattern. `./gradlew :server:integrationTest` uses Testcontainers PostgreSQL and the real `DatabaseSaasRepository`, applying every Flyway migration to a clean container. Production activation uses both a transaction-scoped PostgreSQL advisory lock on `device_uid` and `SELECT ... FOR UPDATE` on the code/device rows.
 
 ## MVP migration debt
 

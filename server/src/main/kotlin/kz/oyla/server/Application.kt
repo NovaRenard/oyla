@@ -10,6 +10,7 @@ import io.ktor.server.netty.Netty
 import io.ktor.server.plugins.calllogging.CallLogging
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.ContentTransformationException
+import io.ktor.server.plugins.forwardedheaders.ForwardedHeaders
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.response.respond
 import io.ktor.server.request.path
@@ -20,6 +21,7 @@ import java.time.Clock
 import java.time.Duration
 import kotlinx.serialization.json.Json
 import kz.oyla.server.config.DatabaseFactory
+import kz.oyla.server.cli.AdminCli
 import kz.oyla.server.config.configureSaasAuthentication
 import kz.oyla.server.config.respondSaasError
 import kz.oyla.server.model.dto.ErrorResponse
@@ -44,7 +46,11 @@ import kz.oyla.server.service.SaasConfig
 import kz.oyla.server.service.SaasService
 import kz.oyla.server.util.ActivationRateLimiter
 
-fun main() {
+fun main(args: Array<String>) {
+    if (args.isNotEmpty()) {
+        AdminCli.run(args)
+        return
+    }
     val port = (System.getenv("PORT") ?: "8080").toIntOrNull() ?: 8080
     embeddedServer(
         factory = Netty,
@@ -91,6 +97,9 @@ fun Application.module(
         // Deliberately log only the path: WebSocket access tokens live in the query string.
         format { call -> "${call.request.httpMethod.value} ${call.request.path()} -> ${call.response.status()}" }
     }
+    // In production Docker does not publish Ktor's port. Forwarded values consequently
+    // originate only from the internal reverse proxy, not arbitrary Internet clients.
+    if (System.getenv("OYLA_ENV")?.equals("production", ignoreCase = true) == true) install(ForwardedHeaders)
     install(ContentNegotiation) { json(json) }
     configureSaasAuthentication(saasService)
     install(WebSockets) {
