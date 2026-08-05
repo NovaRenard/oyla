@@ -120,9 +120,9 @@ class SaasService(
     }
 
     suspend fun refresh(request: RefreshRequest): AuthResponse {
-        if (request.refreshToken.isBlank()) throw ApiException.unauthorized()
+        val refreshToken = request.refreshToken?.takeIf { it.isNotBlank() } ?: throw ApiException.unauthorized()
         val now = clock.instant()
-        val oldHash = secrets.secretHash(request.refreshToken)
+        val oldHash = secrets.secretHash(refreshToken)
         val old = repository.findRefreshTokenByHash(oldHash)
         val user = old?.let { repository.findUserById(it.userId) }
         if (old == null || old.revokedAt != null || old.expiresAt <= now || user == null || user.status != UserStatus.ACTIVE) throw ApiException.unauthorized()

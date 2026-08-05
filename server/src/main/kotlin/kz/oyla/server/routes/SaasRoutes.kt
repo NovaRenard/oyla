@@ -1,6 +1,7 @@
 package kz.oyla.server.routes
 
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.Cookie
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.auth.authenticate
 import io.ktor.server.auth.principal
@@ -30,10 +31,28 @@ import kz.oyla.server.util.ActivationRateLimiter
 
 fun Route.saasRoutes(service: SaasService, activationRateLimiter: ActivationRateLimiter) {
     route("/api/v1/auth") {
-        post("/register-center") { call.respond(HttpStatusCode.Created, service.registerCenter(call.receive<RegisterCenterRequest>(), call.clientIp())) }
-        post("/login") { call.respond(service.login(call.receive<LoginRequest>(), call.clientIp())) }
-        post("/refresh") { call.respond(service.refresh(call.receive<RefreshRequest>())) }
-        post("/logout") { service.logout(call.receive<LogoutRequest>().refreshToken); call.respond(HttpStatusCode.NoContent) }
+        post("/register-center") {
+            val auth = service.registerCenter(call.receive<RegisterCenterRequest>(), call.clientIp())
+            call.setRefreshCookie(auth.refreshToken)
+            call.respond(HttpStatusCode.Created, auth.redacted())
+        }
+        post("/login") {
+            val auth = service.login(call.receive<LoginRequest>(), call.clientIp())
+            call.setRefreshCookie(auth.refreshToken)
+            call.respond(auth.redacted())
+        }
+        post("/refresh") {
+            val request = call.receive<RefreshRequest>()
+            val auth = service.refresh(request.copy(refreshToken = request.refreshToken ?: call.request.cookies[RefreshCookieName]))
+            call.setRefreshCookie(auth.refreshToken)
+            call.respond(auth.redacted())
+        }
+        post("/logout") {
+            val request = call.receive<LogoutRequest>()
+            service.logout(request.refreshToken ?: call.request.cookies[RefreshCookieName].orEmpty())
+            call.clearRefreshCookie()
+            call.respond(HttpStatusCode.NoContent)
+        }
         authenticate("web-jwt") {
             get("/me") {
                 val principal = call.webPrincipal()
@@ -111,3 +130,26 @@ private inline fun <reified T : Enum<T>> ApplicationCall.enumQuery(name: String)
 private fun ApplicationCall.booleanQuery(name: String): Boolean? = request.queryParameters[name]?.let { raw ->
     raw.toBooleanStrictOrNull() ?: throw ApiException.validation("Некорректный параметр $name")
 }
+
+private const val RefreshCookieName = "oyla_refresh"
+
+private fun ApplicationCall.setRefreshCookie(token: String?) {
+    if (token.isNullOrBlank()) return
+    response.cookies.append(Cookie(
+        name = RefreshCookieName,
+        value = token,
+        path = "/api/v1/auth",
+        httpOnly = true,
+        // Local Vite development remains possible over HTTP. Set OYLA_COOKIE_SECURE=true
+        // behind a TLS-terminating reverse proxy where Ktor sees an internal HTTP request.
+        secure = System.getenv("OYLA_COOKIE_SECURE")?.toBooleanStrictOrNull()
+            ?: request.local.scheme.equals("https", ignoreCase = true),
+        extensions = mapOf("SameSite" to "Lax")
+    ))
+}
+
+private fun ApplicationCall.clearRefreshCookie() {
+    response.cookies.append(Cookie(name = RefreshCookieName, value = "", path = "/api/v1/auth", maxAge = 0, httpOnly = true))
+}
+
+private fun kz.oyla.server.model.dto.AuthResponse.redacted() = copy(refreshToken = null)

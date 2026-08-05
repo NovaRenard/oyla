@@ -36,7 +36,7 @@ import kz.oyla.app.ui.theme.OylaTextMuted
 fun SpecialistSettingsScreen(
     role: DeviceRole,
     onBack: () -> Unit,
-    onChangeMode: () -> Unit,
+    onChangeMode: (() -> Unit)? = null,
     onChangePin: (() -> Unit)? = null
 ) {
     BackHandler(onBack = onBack)
@@ -93,18 +93,20 @@ fun SpecialistSettingsScreen(
                 style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
                 textAlign = TextAlign.Center
             )
-            OylaPrimaryButton(
-                text = stringResource(R.string.change_device_mode),
-                icon = Icons.Outlined.SwapHoriz,
-                iconDescription = stringResource(R.string.change_device_mode),
-                onClick = onChangeMode,
-                textSize = 18.sp,
-                minHeight = 52.dp,
-                modifier = Modifier
-                    .widthIn(max = 390.dp)
-                    .fillMaxWidth()
-                    .padding(top = 16.dp)
-            )
+            if (onChangeMode != null) {
+                OylaPrimaryButton(
+                    text = stringResource(R.string.change_device_mode),
+                    icon = Icons.Outlined.SwapHoriz,
+                    iconDescription = stringResource(R.string.change_device_mode),
+                    onClick = onChangeMode,
+                    textSize = 18.sp,
+                    minHeight = 52.dp,
+                    modifier = Modifier
+                        .widthIn(max = 390.dp)
+                        .fillMaxWidth()
+                        .padding(top = 16.dp)
+                )
+            }
             if (role == DeviceRole.SPECIALIST && onChangePin != null) {
                 OylaPrimaryButton(
                     text = stringResource(R.string.change_pin),

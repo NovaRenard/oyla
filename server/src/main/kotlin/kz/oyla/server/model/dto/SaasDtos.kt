@@ -17,8 +17,9 @@ import kz.oyla.server.model.UserStatus
     val password: String
 )
 @Serializable data class LoginRequest(val email: String, val password: String)
-@Serializable data class RefreshRequest(val refreshToken: String)
-@Serializable data class LogoutRequest(val refreshToken: String)
+// Web uses a HttpOnly cookie. The optional body field is retained for non-browser clients.
+@Serializable data class RefreshRequest(val refreshToken: String? = null)
+@Serializable data class LogoutRequest(val refreshToken: String? = null)
 @Serializable data class UserDto(
     val id: String, val email: String, val firstName: String, val lastName: String? = null,
     val status: UserStatus, val lastLoginAt: String? = null

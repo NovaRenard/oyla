@@ -38,7 +38,8 @@ fun OylaNavGraph(
     devicePreferences: DevicePreferences,
     startDestination: OylaDestination,
     sessionRepository: SessionRepository,
-    webSocketClient: OylaWebSocketClient
+    webSocketClient: OylaWebSocketClient,
+    allowLegacyRoleSelection: Boolean = false
 ) {
     val navController = rememberNavController()
     val scope = rememberCoroutineScope()
@@ -107,19 +108,24 @@ fun OylaNavGraph(
                 SpecialistSettingsScreen(
                     role = DeviceRole.SPECIALIST,
                     onBack = { navController.popBackStack() },
-                    onChangeMode = {
+                    onChangeMode = if (allowLegacyRoleSelection) {
+                        {
                         navController.navigate(OylaDestination.VERIFY_PIN.route)
-                    },
-                    onChangePin = {
+                        }
+                    } else null,
+                    onChangePin = if (allowLegacyRoleSelection) {
+                        {
                         navController.navigate(OylaDestination.CHANGE_PIN.route)
-                    }
+                        }
+                    } else null
                 )
             }
             composable(OylaDestination.CHILD_SETTINGS.route) {
                 SpecialistSettingsScreen(
                     role = DeviceRole.CHILD,
                     onBack = { navController.popBackStack() },
-                    onChangeMode = {
+                    onChangeMode = if (allowLegacyRoleSelection) {
+                        {
                         scope.launch {
                             if (devicePreferences.hasPin()) {
                                 navController.navigate(OylaDestination.VERIFY_PIN.route)
@@ -127,7 +133,8 @@ fun OylaNavGraph(
                                 navController.navigate(OylaDestination.CREATE_PIN.route)
                             }
                         }
-                    }
+                        }
+                    } else null
                 )
             }
             composable(OylaDestination.VERIFY_PIN.route) {

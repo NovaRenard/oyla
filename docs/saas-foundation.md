@@ -22,7 +22,7 @@ OWNER and ADMIN can edit the center, create/cancel activation codes, update devi
 
 ## Web authentication
 
-`POST /api/v1/auth/register-center` creates a center, active owner user, active OWNER membership, and a refresh-token session in one database transaction. Login accepts a case-insensitive email and stores it lowercase. Passwords use BCrypt (default cost 12; test cost 10).
+`POST /api/v1/auth/register-center` creates a center, active owner user, active OWNER membership, and a refresh-token session in one database transaction. Login accepts a case-insensitive email and stores it lowercase. Passwords use BCrypt (default cost 12; test cost 10). For browser clients refresh tokens are set only in the `oyla_refresh` HttpOnly, SameSite=Lax cookie; the JSON response redacts it and the web client keeps only the short-lived access token in memory.
 
 Access JWTs are HMAC-512 signed and expire after 15 minutes by default. They carry user ID and the selected active center. Refresh tokens expire after 30 days by default, are high-entropy random values, are stored only as HMAC hashes, and rotate on `POST /api/v1/auth/refresh`. `POST /api/v1/auth/logout` revokes a supplied refresh token.
 
@@ -81,12 +81,12 @@ For a non-Docker local server, set `DATABASE_URL`, `DATABASE_USER`, `DATABASE_PA
 ## curl examples
 
 ```bash
-# Register owner and center; save accessToken and refreshToken from the response.
-curl -X POST http://localhost:8083/api/v1/auth/register-center \
+# Register owner and center; persist the HttpOnly-style refresh cookie in curl's cookie jar.
+curl -c cookies.txt -X POST http://localhost:8083/api/v1/auth/register-center \
   -H 'Content-Type: application/json' \
   -d '{"centerName":"Центр речи","firstName":"Алия","lastName":"Серикова","email":"aliya@example.com","password":"Password123"}'
 
-curl -X POST http://localhost:8083/api/v1/auth/login \
+curl -c cookies.txt -X POST http://localhost:8083/api/v1/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"aliya@example.com","password":"Password123"}'
 

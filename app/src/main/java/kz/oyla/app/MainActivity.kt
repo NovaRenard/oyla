@@ -1,6 +1,7 @@
 package kz.oyla.app
 
 import android.os.Bundle
+import android.os.Build
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -19,6 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,16 +34,24 @@ import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import kotlinx.coroutines.flow.first
 import kz.oyla.app.data.local.DevicePreferences
-import kz.oyla.app.data.local.DeviceSetup
+import kz.oyla.app.data.device.DeviceRuntimeInfo
+import kz.oyla.app.data.local.DeviceIdentity
+import kz.oyla.app.data.remote.DeviceAuthApiClient
 import kz.oyla.app.data.remote.OylaApiClient
 import kz.oyla.app.data.remote.OylaWebSocketClient
 import kz.oyla.app.data.session.SessionRepository
 import kz.oyla.app.domain.model.DeviceRole
 import kz.oyla.app.navigation.OylaDestination
 import kz.oyla.app.navigation.OylaNavGraph
+import kz.oyla.app.ui.device.ActivationScreen
+import kz.oyla.app.ui.device.BlockedDeviceScreen
+import kz.oyla.app.ui.device.DeviceStartupUiState
+import kz.oyla.app.ui.device.DeviceStartupViewModel
+import kz.oyla.app.ui.device.DeviceStartupViewModelFactory
+import kz.oyla.app.ui.device.OfflineDeviceScreen
 import kz.oyla.app.ui.theme.OylaTheme
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -71,42 +81,50 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun OylaApp(devicePreferences: DevicePreferences) {
-    var startDestination by remember { mutableStateOf<OylaDestination?>(null) }
-
-    LaunchedEffect(devicePreferences) {
-        val setup = devicePreferences.setupFlow.first()
-        val normalStart = setup.toStartDestination()
-        val active = devicePreferences.getActiveSession()
-        startDestination = when {
-            !setup.hasPin || setup.role == null -> normalStart
-            active?.role == DeviceRole.SPECIALIST -> OylaDestination.SPECIALIST_WAITING
-            active?.role == DeviceRole.CHILD -> OylaDestination.CHILD_WAITING
-            else -> normalStart
-        }
-    }
-
-    val destination = startDestination
-    if (destination == null) {
-        LoadingScreen()
-    } else {
-        val apiClient = remember { OylaApiClient(BuildConfig.API_BASE_URL) }
-        val webSocketClient = remember { OylaWebSocketClient(BuildConfig.WS_BASE_URL) }
-        val sessionRepository = remember { SessionRepository(apiClient, devicePreferences) }
-        OylaNavGraph(
-            devicePreferences = devicePreferences,
-            startDestination = destination,
-            sessionRepository = sessionRepository,
-            webSocketClient = webSocketClient
+    val gateway = remember { DeviceAuthApiClient(BuildConfig.API_BASE_URL) }
+    val runtimeInfo = remember {
+        DeviceRuntimeInfo(
+            appVersion = BuildConfig.VERSION_NAME,
+            androidVersion = Build.VERSION.RELEASE ?: "unknown",
+            model = listOf(Build.MANUFACTURER, Build.MODEL).filter { it.isNotBlank() }.joinToString(" ")
         )
+    }
+    val startupViewModel: DeviceStartupViewModel = viewModel(
+        factory = remember { DeviceStartupViewModelFactory(devicePreferences, gateway, runtimeInfo) }
+    )
+    val state by startupViewModel.uiState.collectAsState()
+    when (state) {
+        DeviceStartupUiState.Loading -> LoadingScreen()
+        is DeviceStartupUiState.Activation -> ActivationScreen(state as DeviceStartupUiState.Activation, startupViewModel::activate)
+        is DeviceStartupUiState.Blocked -> BlockedDeviceScreen((state as DeviceStartupUiState.Blocked).identity, startupViewModel::validate)
+        is DeviceStartupUiState.Offline -> OfflineDeviceScreen((state as DeviceStartupUiState.Offline).identity, startupViewModel::validate)
+        is DeviceStartupUiState.Ready -> ActivatedOylaApp((state as DeviceStartupUiState.Ready).identity, devicePreferences)
     }
 }
 
-private fun DeviceSetup.toStartDestination(): OylaDestination = when (role) {
-    null -> OylaDestination.ROLE_SELECTION
-    else -> if (!hasPin) OylaDestination.CREATE_PIN else when (role) {
-        DeviceRole.CHILD -> OylaDestination.CHILD_CONNECT
-        DeviceRole.SPECIALIST -> OylaDestination.SPECIALIST_HOME
+@Composable
+private fun ActivatedOylaApp(identity: DeviceIdentity, devicePreferences: DevicePreferences) {
+    var startDestination by remember(identity.deviceId) { mutableStateOf<OylaDestination?>(null) }
+    LaunchedEffect(identity.deviceId, identity.deviceRole) {
+        val active = devicePreferences.getActiveSession()
+        startDestination = when {
+            active?.role == DeviceRole.SPECIALIST && identity.deviceRole == DeviceRole.SPECIALIST -> OylaDestination.SPECIALIST_WAITING
+            active?.role == DeviceRole.CHILD && identity.deviceRole == DeviceRole.CHILD -> OylaDestination.CHILD_WAITING
+            identity.deviceRole == DeviceRole.CHILD -> OylaDestination.CHILD_CONNECT
+            else -> OylaDestination.SPECIALIST_HOME
+        }
     }
+    val destination = startDestination ?: return LoadingScreen()
+    val apiClient = remember { OylaApiClient(BuildConfig.API_BASE_URL) }
+    val webSocketClient = remember { OylaWebSocketClient(BuildConfig.WS_BASE_URL) }
+    val sessionRepository = remember { SessionRepository(apiClient, devicePreferences) }
+    OylaNavGraph(
+        devicePreferences = devicePreferences,
+        startDestination = destination,
+        sessionRepository = sessionRepository,
+        webSocketClient = webSocketClient,
+        allowLegacyRoleSelection = BuildConfig.DEBUG
+    )
 }
 
 @Composable

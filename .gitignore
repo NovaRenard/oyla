@@ -1,5 +1,8 @@
 *.iml
 .gradle
+/.kotlin/
+/web-app/node_modules/
+/web-app/dist/
 /local.properties
 /deploy/.env
 /server/.env
