@@ -9,7 +9,9 @@ const sessionEndListeners = new Set<() => void>();
 /** AuthContext owns navigation and cache eviction; the API layer only publishes session state. */
 export function subscribeToSessionEnd(listener: () => void) {
   sessionEndListeners.add(listener);
-  return () => sessionEndListeners.delete(listener);
+  return () => {
+    sessionEndListeners.delete(listener);
+  };
 }
 
 function endSession() {

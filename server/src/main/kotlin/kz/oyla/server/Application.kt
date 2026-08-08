@@ -10,7 +10,7 @@ import io.ktor.server.netty.Netty
 import io.ktor.server.plugins.calllogging.CallLogging
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.ContentTransformationException
-import io.ktor.server.plugins.forwardedheaders.ForwardedHeaders
+import io.ktor.server.plugins.forwardedheaders.XForwardedHeaders
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.response.respond
 import io.ktor.server.request.path
@@ -99,7 +99,7 @@ fun Application.module(
     }
     // In production Docker does not publish Ktor's port. Forwarded values consequently
     // originate only from the internal reverse proxy, not arbitrary Internet clients.
-    if (System.getenv("OYLA_ENV")?.equals("production", ignoreCase = true) == true) install(ForwardedHeaders)
+    if (System.getenv("OYLA_ENV")?.equals("production", ignoreCase = true) == true) install(XForwardedHeaders)
     install(ContentNegotiation) { json(json) }
     configureSaasAuthentication(saasService)
     install(WebSockets) {

@@ -20,7 +20,7 @@ postgresql = "42.7.5"
 logback = "1.5.18"
 jwt = "4.5.0"
 jbcrypt = "0.4"
-testcontainers = "1.20.6"
+testcontainers = "1.21.4"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }

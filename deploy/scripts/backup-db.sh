@@ -15,7 +15,9 @@ set -a
 source "$env_file"
 set +a
 
-backup_dir="$repo_root/backups"
+# Keep production backups outside the working tree.  The default resolves to
+# /srv/apps/oyla/backups when the repository is deployed in /srv/apps/oyla/repo.
+backup_dir="${OYLA_BACKUP_DIR:-$(cd "$repo_root/.." && pwd)/backups}"
 mkdir -p "$backup_dir"
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 backup_file="$backup_dir/oyla-$timestamp.dump"

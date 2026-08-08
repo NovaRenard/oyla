@@ -64,7 +64,6 @@ services:
     restart: unless-stopped
     environment:
       OYLA_DOMAIN: ${OYLA_DOMAIN:?Set OYLA_DOMAIN}
-      LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL:?Set LETSENCRYPT_EMAIL}
     ports:
       - "80:80"
       - "443:443"

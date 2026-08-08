@@ -7,8 +7,10 @@ This runbook deploys the web cabinet and API on one HTTPS domain. Only Caddy pub
 Use a supported Linux server with Docker Engine/Compose v2, at least 2 GB RAM, persistent disk for PostgreSQL and a public IPv4/IPv6 address. Create an `A`/`AAAA` record for `OYLA_DOMAIN` before startup. Open TCP ports 80 and 443 only; do not expose 5432 or 8080. Install Docker using the distribution instructions and clone this repository.
 
 ```bash
-git clone https://github.com/NovaRenard/Oyla.git
-cd Oyla
+sudo mkdir -p /srv/apps/oyla
+sudo chown -R "$(id -un)":"$(id -gn)" /srv/apps/oyla
+git clone https://github.com/NovaRenard/Oyla.git /srv/apps/oyla/repo
+cd /srv/apps/oyla/repo
 cp deploy/.env.prod.example deploy/.env.prod
 chmod 600 deploy/.env.prod
 ```
@@ -20,7 +22,7 @@ openssl rand -base64 48   # JWT_SECRET
 openssl rand -base64 48   # OYLA_SECRET_PEPPER
 ```
 
-`JWT_SECRET`, `OYLA_SECRET_PEPPER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_USER`, `OYLA_DOMAIN`, `LETSENCRYPT_EMAIL`, token TTLs and `BCRYPT_LOG_ROUNDS` are required. Keep `OYLA_COOKIE_SECURE=true` and `ALLOW_PUBLIC_REGISTRATION=false`.
+`JWT_SECRET`, `OYLA_SECRET_PEPPER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_USER`, `OYLA_DOMAIN`, token TTLs and `BCRYPT_LOG_ROUNDS` are required. Set `OYLA_DOMAIN=oyla.saadsarbas.tech`; Caddy's automatic HTTPS works without a configured contact email. Keep `OYLA_COOKIE_SECURE=true` and `ALLOW_PUBLIC_REGISTRATION=false`.
 
 ## 2. Validate and start
 
@@ -95,10 +97,10 @@ chmod +x deploy/scripts/*.sh
 deploy/scripts/backup-db.sh
 ```
 
-Backups are timestamped under ignored `backups/`. For restore, stop app traffic (`docker compose ... stop reverse-proxy oyla-server` or use maintenance mode), then explicitly confirm:
+Backups are timestamped under `/srv/apps/oyla/backups/` by default (or under `OYLA_BACKUP_DIR` if set). For restore, stop app traffic (`docker compose ... stop reverse-proxy oyla-server` or use maintenance mode), then explicitly confirm:
 
 ```bash
-deploy/scripts/restore-db.sh --confirm backups/oyla-YYYYMMDDTHHMMSSZ.dump
+deploy/scripts/restore-db.sh --confirm /srv/apps/oyla/backups/oyla-YYYYMMDDTHHMMSSZ.dump
 docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod up -d
 ```
 
