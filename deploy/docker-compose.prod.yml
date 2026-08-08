@@ -64,6 +64,9 @@ services:
     restart: unless-stopped
     environment:
       OYLA_DOMAIN: ${OYLA_DOMAIN:?Set OYLA_DOMAIN}
+      # In the direct-production case this is the public hostname. The
+      # Cloudflare Tunnel override sets it to :80 and binds it to loopback.
+      OYLA_CADDY_SITE: ${OYLA_DOMAIN:?Set OYLA_DOMAIN}
     ports:
       - "80:80"
       - "443:443"

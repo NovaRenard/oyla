@@ -1,0 +1,9 @@
+# Use together with docker-compose.prod.yml when a shared Cloudflare Tunnel is
+# already the Internet edge. Caddy remains the Oyla path router but is reachable
+# only from the local cloudflared service; it never binds an Internet port.
+services:
+  reverse-proxy:
+    environment:
+      OYLA_CADDY_SITE: ":80"
+    ports: !override
+      - "127.0.0.1:8082:80"

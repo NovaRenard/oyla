@@ -1,6 +1,6 @@
 # Production deployment
 
-This runbook deploys the web cabinet and API on one HTTPS domain. Only Caddy publishes ports; PostgreSQL and Ktor remain on the private Docker network.
+This runbook deploys the web cabinet and API on one HTTPS domain. PostgreSQL and Ktor remain on the private Docker network. In a direct deployment only Caddy publishes ports; when a shared Cloudflare Tunnel is already the Internet edge, use the dedicated loopback-only override below.
 
 ## 1. Prepare the server and DNS
 
@@ -36,6 +36,18 @@ docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod dow
 ```
 
 On first boot Flyway runs before Ktor becomes healthy. Verify `https://<OYLA_DOMAIN>/health` returns `{"status":"ok"}` and `https://<OYLA_DOMAIN>/login` opens. Caddy obtains and renews HTTPS certificates automatically. The web application calls `/api/...` on the same origin; the refresh cookie is `HttpOnly`, `Secure`, `SameSite=Lax`, scoped to `/api/v1/auth`, and never accessible to JavaScript.
+
+### Shared Cloudflare Tunnel
+
+If the server already uses a host-networked shared Cloudflare Tunnel, do not publish a second Caddy on 80/443. Add a Cloudflared ingress rule for `oyla.saadsarbas.tech` pointing to `http://127.0.0.1:8082`, then use the override on every Compose command:
+
+```bash
+docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.prod.cloudflared.yml --env-file deploy/.env.prod config
+docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.prod.cloudflared.yml --env-file deploy/.env.prod build
+docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.prod.cloudflared.yml --env-file deploy/.env.prod up -d
+```
+
+This makes the Oyla Caddy router listen only on `127.0.0.1:8082`; Cloudflare provides public HTTPS and WSS while Caddy still routes `/health`, `/api/*`, and `/ws/*` to the private services.
 
 ## 3. Create the first center
 

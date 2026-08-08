@@ -1,4 +1,4 @@
-{$OYLA_DOMAIN} {
+{$OYLA_CADDY_SITE} {
 	encode zstd gzip
 
 	header {
