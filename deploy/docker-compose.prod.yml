@@ -53,7 +53,7 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://localhost:8080/health"]
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/health"]
       interval: 30s
       timeout: 5s
       retries: 3
