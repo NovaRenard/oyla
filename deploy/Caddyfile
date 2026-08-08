@@ -20,12 +20,16 @@
 	handle /health {
 		reverse_proxy oyla-server:8080 {
 			header_up Host {host}
+			# The public edge is always HTTPS: directly in Caddy or via the
+			# trusted Cloudflare Tunnel loopback connection.
+			header_up X-Forwarded-Proto https
 		}
 	}
 
 	handle /api/* {
 		reverse_proxy oyla-server:8080 {
 			header_up Host {host}
+			header_up X-Forwarded-Proto https
 			transport http {
 				read_timeout 65s
 				write_timeout 65s
@@ -38,6 +42,7 @@
 	handle /ws/* {
 		reverse_proxy oyla-server:8080 {
 			header_up Host {host}
+			header_up X-Forwarded-Proto https
 		}
 	}
 
