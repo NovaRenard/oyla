@@ -2,9 +2,9 @@ import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 
 const nav = [
-  ["/overview", "Обзор"], ["/devices", "Устройства"],
+  ["/overview", "Обзор"], ["/devices", "Устройства"], ["/children", "Дети"], ["/specialists", "Специалисты"], ["/lessons", "Занятия"],
 ];
-const comingSoon = ["Дети", "Специалисты", "Контент", "Занятия"];
+const comingSoon = ["Контент"];
 
 export function AppLayout() {
   const { center, user, role, signOut } = useAuth();

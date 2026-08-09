@@ -1,5 +1,6 @@
 export type DeviceRole = "CHILD" | "SPECIALIST";
 export type DeviceStatus = "ACTIVE" | "BLOCKED" | "UNLINKED";
+export type CatalogStatus = "ACTIVE" | "ARCHIVED";
 
 export interface User {
   id: string;
@@ -57,6 +58,61 @@ export interface ActivationCode {
   expiresAt: string;
   deviceName: string;
   deviceRole: DeviceRole;
+}
+
+export interface Child {
+  id: string;
+  firstName: string;
+  lastName?: string;
+  birthDate?: string;
+  status: CatalogStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Specialist {
+  id: string;
+  firstName: string;
+  lastName?: string;
+  specialization?: string;
+  status: CatalogStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type LessonStatus = "WAITING_FOR_CHILD" | "READY" | "COMPLETED" | "CANCELLED" | "EXPIRED";
+
+/** Web history deliberately excludes session/device access tokens and legacy connection codes. */
+export interface Lesson {
+  id: string;
+  childId: string;
+  childName: string;
+  specialistId: string;
+  specialistName: string;
+  status: LessonStatus;
+  startedAt: string;
+  completedAt?: string;
+  durationMs?: number;
+  exerciseCount: number;
+}
+
+export interface LessonExercise {
+  position: number;
+  exerciseId: string;
+  instructionText: string;
+  status: string;
+  attemptCount: number;
+  incorrectAttempts: number;
+  timeToCorrectMs?: number;
+}
+
+export interface LessonDetails {
+  lesson: Lesson;
+  specialistDeviceId: string;
+  specialistDeviceName: string;
+  childDeviceId: string;
+  childDeviceName: string;
+  exercises: LessonExercise[];
 }
 
 export interface ApiErrorBody {

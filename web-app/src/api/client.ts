@@ -1,4 +1,4 @@
-import { ApiError, type ActivationCode, type AuthResponse, type Center, type Device, type DeviceRole, type DeviceStatus, type MeResponse } from "./types";
+import { ApiError, type ActivationCode, type AuthResponse, type Center, type Child, type Device, type DeviceRole, type DeviceStatus, type Lesson, type LessonDetails, type LessonStatus, type MeResponse, type Specialist } from "./types";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 let accessToken: string | null = null;
@@ -115,6 +115,38 @@ export const api = {
   cancelActivationCode: (id: string) => authenticated<void>(`/api/v1/devices/activation-codes/${id}`, { method: "DELETE" }),
   updateDevice: (id: string, input: { name?: string; role?: DeviceRole; status?: DeviceStatus }) => authenticated<Device>(`/api/v1/devices/${id}`, { method: "PATCH", body: input }),
   unlinkDevice: (id: string) => authenticated<void>(`/api/v1/devices/${id}/unlink`, { method: "POST" }),
+  listChildren: (filters?: { status?: "ACTIVE" | "ARCHIVED" | "ALL"; search?: string }) => {
+    const query = new URLSearchParams();
+    if (filters?.status) query.set("status", filters.status);
+    if (filters?.search?.trim()) query.set("search", filters.search.trim());
+    return authenticated<Child[]>(`/api/v1/children${query.size ? `?${query}` : ""}`);
+  },
+  getChild: (id: string) => authenticated<Child>(`/api/v1/children/${id}`),
+  createChild: (input: { firstName: string; lastName?: string; birthDate?: string }) => authenticated<Child>("/api/v1/children", { method: "POST", body: input }),
+  updateChild: (id: string, input: { firstName?: string; lastName?: string; birthDate?: string }) => authenticated<Child>(`/api/v1/children/${id}`, { method: "PATCH", body: input }),
+  archiveChild: (id: string) => authenticated<Child>(`/api/v1/children/${id}/archive`, { method: "POST" }),
+  restoreChild: (id: string) => authenticated<Child>(`/api/v1/children/${id}/restore`, { method: "POST" }),
+  listSpecialists: (filters?: { status?: "ACTIVE" | "ARCHIVED" | "ALL"; search?: string }) => {
+    const query = new URLSearchParams();
+    if (filters?.status) query.set("status", filters.status);
+    if (filters?.search?.trim()) query.set("search", filters.search.trim());
+    return authenticated<Specialist[]>(`/api/v1/specialists${query.size ? `?${query}` : ""}`);
+  },
+  getSpecialist: (id: string) => authenticated<Specialist>(`/api/v1/specialists/${id}`),
+  createSpecialist: (input: { firstName: string; lastName?: string; specialization?: string }) => authenticated<Specialist>("/api/v1/specialists", { method: "POST", body: input }),
+  updateSpecialist: (id: string, input: { firstName?: string; lastName?: string; specialization?: string }) => authenticated<Specialist>(`/api/v1/specialists/${id}`, { method: "PATCH", body: input }),
+  archiveSpecialist: (id: string) => authenticated<Specialist>(`/api/v1/specialists/${id}/archive`, { method: "POST" }),
+  restoreSpecialist: (id: string) => authenticated<Specialist>(`/api/v1/specialists/${id}/restore`, { method: "POST" }),
+  listLessons: (filters?: { childId?: string; specialistId?: string; status?: LessonStatus }) => {
+    const query = new URLSearchParams();
+    if (filters?.childId) query.set("childId", filters.childId);
+    if (filters?.specialistId) query.set("specialistId", filters.specialistId);
+    if (filters?.status) query.set("status", filters.status);
+    return authenticated<Lesson[]>(`/api/v1/lessons${query.size ? `?${query}` : ""}`);
+  },
+  getLesson: (id: string) => authenticated<LessonDetails>(`/api/v1/lessons/${id}`),
+  childLessons: (id: string, status?: LessonStatus) => authenticated<Lesson[]>(`/api/v1/children/${id}/lessons${status ? `?status=${status}` : ""}`),
+  specialistLessons: (id: string, status?: LessonStatus) => authenticated<Lesson[]>(`/api/v1/specialists/${id}/lessons${status ? `?status=${status}` : ""}`),
 };
 
 export function messageForError(error: unknown): string {

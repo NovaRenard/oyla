@@ -39,6 +39,8 @@ import kz.oyla.app.ui.theme.OylaTextMuted
 @Composable
 fun SpecialistHomeScreen(
     onNewLesson: () -> Unit,
+    centerName: String,
+    deviceName: String,
     onOpenSettings: () -> Unit
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -85,6 +87,12 @@ fun SpecialistHomeScreen(
                     color = OylaTextMuted,
                     fontSize = 29.sp,
                     lineHeight = 36.sp,
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    text = "$centerName · $deviceName · подключён",
+                    color = OylaTextMuted,
+                    fontSize = 16.sp,
                     textAlign = TextAlign.Center
                 )
                 OylaPrimaryButton(

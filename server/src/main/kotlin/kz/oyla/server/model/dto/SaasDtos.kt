@@ -8,6 +8,8 @@ import kz.oyla.server.model.DeviceStatus
 import kz.oyla.server.model.MembershipRole
 import kz.oyla.server.model.MembershipStatus
 import kz.oyla.server.model.UserStatus
+import kz.oyla.server.model.ChildStatus
+import kz.oyla.server.model.SpecialistStatus
 
 @Serializable data class RegisterCenterRequest(
     val centerName: String,
@@ -110,6 +112,30 @@ import kz.oyla.server.model.UserStatus
     val androidVersion: String? = null,
     val model: String? = null
 )
+
+@Serializable data class ChildDto(
+    val id: String,
+    val firstName: String,
+    val lastName: String? = null,
+    val birthDate: String? = null,
+    val status: ChildStatus,
+    val createdAt: String,
+    val updatedAt: String
+)
+@Serializable data class CreateChildRequest(val firstName: String, val lastName: String? = null, val birthDate: String? = null)
+@Serializable data class UpdateChildRequest(val firstName: String? = null, val lastName: String? = null, val birthDate: String? = null)
+
+@Serializable data class SpecialistDto(
+    val id: String,
+    val firstName: String,
+    val lastName: String? = null,
+    val specialization: String? = null,
+    val status: SpecialistStatus,
+    val createdAt: String,
+    val updatedAt: String
+)
+@Serializable data class CreateSpecialistRequest(val firstName: String, val lastName: String? = null, val specialization: String? = null)
+@Serializable data class UpdateSpecialistRequest(val firstName: String? = null, val lastName: String? = null, val specialization: String? = null)
 
 @Serializable data class ApiErrorBody(
     val code: String,

@@ -67,7 +67,7 @@ fun SpecialistSummaryScreen(viewModel: SpecialistSessionViewModel, onCompleted: 
                     if (state.isLoading) CircularProgressIndicator(color = OylaBlue) else Text(state.errorMessage ?: "Загружаем итог…", color = OylaTextMuted, fontSize = 20.sp)
                 }
             } else {
-                SummaryContent(summary, Modifier.weight(1f))
+                SummaryContent(summary, state.session?.specialistName, Modifier.weight(1f))
             }
             Spacer(Modifier.height(12.dp))
             OylaPrimaryButton(
@@ -80,9 +80,10 @@ fun SpecialistSummaryScreen(viewModel: SpecialistSessionViewModel, onCompleted: 
 }
 
 @Composable
-private fun SummaryContent(summary: SessionSummaryResponse, modifier: Modifier) {
+private fun SummaryContent(summary: SessionSummaryResponse, specialistName: String?, modifier: Modifier) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = modifier.verticalScroll(rememberScrollState())) {
         Text("Ребёнок: ${summary.childName}", color = OylaNavy, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+        specialistName?.let { Text("Специалист: $it", color = OylaNavy, fontSize = 20.sp, fontWeight = FontWeight.SemiBold) }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             SummaryMetric("Выполнено", "${summary.completedExercises} из ${summary.totalExercises}", Modifier.weight(1f))
             SummaryMetric("Общее время", formatTime(summary.activeDurationMs), Modifier.weight(1f))

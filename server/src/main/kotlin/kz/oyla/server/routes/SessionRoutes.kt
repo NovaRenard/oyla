@@ -17,8 +17,9 @@ import kz.oyla.server.model.dto.NextExerciseRequest
 import kz.oyla.server.service.SessionEventHub
 import kz.oyla.server.service.ExerciseService
 import kz.oyla.server.service.SessionService
+import kz.oyla.server.service.LessonService
 
-fun Route.sessionRoutes(service: SessionService, exercises: ExerciseService, eventHub: SessionEventHub) {
+fun Route.sessionRoutes(service: SessionService, exercises: ExerciseService, eventHub: SessionEventHub, lessons: LessonService? = null) {
     route("/api/v1/sessions") {
         post {
             val result = service.create(call.receive<CreateSessionRequest>())
@@ -42,6 +43,7 @@ fun Route.sessionRoutes(service: SessionService, exercises: ExerciseService, eve
                 sessionId = call.parameters["sessionId"].orEmpty(),
                 token = call.bearerToken()
             )
+            lessons?.recordCancellation(cancelled)
             eventHub.publishSessionCancelled(cancelled.id)
             call.respond(HttpStatusCode.NoContent)
         }
@@ -49,6 +51,7 @@ fun Route.sessionRoutes(service: SessionService, exercises: ExerciseService, eve
             val completed = service.complete(
                 sessionId = call.parameters["sessionId"].orEmpty(), token = call.bearerToken()
             )
+            lessons?.recordCompletion(completed)
             eventHub.publishSessionCompleted(completed.id)
             call.respond(HttpStatusCode.NoContent)
         }

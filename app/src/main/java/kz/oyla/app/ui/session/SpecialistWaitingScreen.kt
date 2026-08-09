@@ -88,22 +88,25 @@ fun SpecialistWaitingScreen(
                     color = OylaTextMuted,
                     fontSize = 24.sp
                 )
-                Text(
-                    text = stringResource(R.string.connection_code_title),
-                    color = OylaNavy,
-                    fontSize = 43.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = session?.connectionCode ?: "— — — —",
-                    color = OylaNavy,
-                    fontSize = 72.sp,
-                    letterSpacing = 8.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier
-                        .background(Color.White.copy(alpha = 0.9f), RoundedCornerShape(28.dp))
-                        .padding(horizontal = 44.dp, vertical = 12.dp)
-                )
+                if (session?.connectionCode != null) {
+                    Text(
+                        text = stringResource(R.string.connection_code_title),
+                        color = OylaNavy,
+                        fontSize = 43.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = session.connectionCode,
+                        color = OylaNavy,
+                        fontSize = 72.sp,
+                        letterSpacing = 8.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.background(Color.White.copy(alpha = 0.9f), RoundedCornerShape(28.dp)).padding(horizontal = 44.dp, vertical = 12.dp)
+                    )
+                } else {
+                    Text("Занятие назначено", color = OylaNavy, fontSize = 43.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                    Text("Детский планшет получит приглашение автоматически", color = OylaTextMuted, fontSize = 20.sp, textAlign = TextAlign.Center)
+                }
                 val connected = session?.childConnected == true
                 Text(
                     text = stringResource(if (connected) R.string.child_connected else R.string.waiting_child),

@@ -18,18 +18,25 @@ import java.util.UUID
 import kz.oyla.server.config.WebUserPrincipal
 import kz.oyla.server.model.DeviceRole
 import kz.oyla.server.model.DeviceStatus
+import kz.oyla.server.model.SessionStatus
 import kz.oyla.server.model.dto.CreateActivationCodeRequest
+import kz.oyla.server.model.dto.CreateChildRequest
+import kz.oyla.server.model.dto.CreateSpecialistRequest
 import kz.oyla.server.model.dto.LoginRequest
 import kz.oyla.server.model.dto.LogoutRequest
 import kz.oyla.server.model.dto.RefreshRequest
 import kz.oyla.server.model.dto.RegisterCenterRequest
 import kz.oyla.server.model.dto.UpdateCenterRequest
 import kz.oyla.server.model.dto.UpdateDeviceRequest
+import kz.oyla.server.model.dto.UpdateChildRequest
+import kz.oyla.server.model.dto.UpdateSpecialistRequest
+import kz.oyla.server.model.dto.CreateDeviceLessonRequest
 import kz.oyla.server.service.ApiException
 import kz.oyla.server.service.SaasService
+import kz.oyla.server.service.LessonService
 import kz.oyla.server.util.ActivationRateLimiter
 
-fun Route.saasRoutes(service: SaasService, activationRateLimiter: ActivationRateLimiter) {
+fun Route.saasRoutes(service: SaasService, lessons: LessonService, activationRateLimiter: ActivationRateLimiter) {
     route("/api/v1/auth") {
         post("/register-center") {
             if (!service.publicRegistrationAllowed) throw ApiException.registrationDisabled()
@@ -101,6 +108,75 @@ fun Route.saasRoutes(service: SaasService, activationRateLimiter: ActivationRate
                 val principal = call.webPrincipal(); service.unlinkDevice(principal.userId, principal.activeCenterId, call.uuidParameter("deviceId"), call.clientIp()); call.respond(HttpStatusCode.NoContent)
             }
         }
+
+        route("/api/v1/children") {
+            get {
+                val principal = call.webPrincipal()
+                call.respond(service.listChildren(principal.userId, principal.activeCenterId, call.request.queryParameters["status"], call.request.queryParameters["search"]))
+            }
+            post {
+                val principal = call.webPrincipal()
+                call.respond(HttpStatusCode.Created, service.createChild(principal.userId, principal.activeCenterId, call.receive<CreateChildRequest>(), call.clientIp()))
+            }
+            get("/{childId}") {
+                val principal = call.webPrincipal(); call.respond(service.getChild(principal.userId, principal.activeCenterId, call.uuidParameter("childId")))
+            }
+            patch("/{childId}") {
+                val principal = call.webPrincipal(); call.respond(service.updateChild(principal.userId, principal.activeCenterId, call.uuidParameter("childId"), call.receive<UpdateChildRequest>(), call.clientIp()))
+            }
+            post("/{childId}/archive") {
+                val principal = call.webPrincipal(); call.respond(service.archiveChild(principal.userId, principal.activeCenterId, call.uuidParameter("childId"), false, call.clientIp()))
+            }
+            post("/{childId}/restore") {
+                val principal = call.webPrincipal(); call.respond(service.archiveChild(principal.userId, principal.activeCenterId, call.uuidParameter("childId"), true, call.clientIp()))
+            }
+            get("/{childId}/lessons") {
+                val principal = call.webPrincipal(); val context = service.requireCenterContext(principal.userId, principal.activeCenterId)
+                val childId = call.uuidParameter("childId"); lessons.ensureChildInCenter(context, childId)
+                call.respond(lessons.listForWeb(context, childId = childId, status = call.enumQuery<SessionStatus>("status")))
+            }
+        }
+
+        route("/api/v1/specialists") {
+            get {
+                val principal = call.webPrincipal()
+                call.respond(service.listSpecialists(principal.userId, principal.activeCenterId, call.request.queryParameters["status"], call.request.queryParameters["search"]))
+            }
+            post {
+                val principal = call.webPrincipal()
+                call.respond(HttpStatusCode.Created, service.createSpecialist(principal.userId, principal.activeCenterId, call.receive<CreateSpecialistRequest>(), call.clientIp()))
+            }
+            get("/{specialistId}") {
+                val principal = call.webPrincipal(); call.respond(service.getSpecialist(principal.userId, principal.activeCenterId, call.uuidParameter("specialistId")))
+            }
+            patch("/{specialistId}") {
+                val principal = call.webPrincipal(); call.respond(service.updateSpecialist(principal.userId, principal.activeCenterId, call.uuidParameter("specialistId"), call.receive<UpdateSpecialistRequest>(), call.clientIp()))
+            }
+            post("/{specialistId}/archive") {
+                val principal = call.webPrincipal(); call.respond(service.archiveSpecialist(principal.userId, principal.activeCenterId, call.uuidParameter("specialistId"), false, call.clientIp()))
+            }
+            post("/{specialistId}/restore") {
+                val principal = call.webPrincipal(); call.respond(service.archiveSpecialist(principal.userId, principal.activeCenterId, call.uuidParameter("specialistId"), true, call.clientIp()))
+            }
+            get("/{specialistId}/lessons") {
+                val principal = call.webPrincipal(); val context = service.requireCenterContext(principal.userId, principal.activeCenterId)
+                val specialistId = call.uuidParameter("specialistId"); lessons.ensureSpecialistInCenter(context, specialistId)
+                call.respond(lessons.listForWeb(context, specialistId = specialistId, status = call.enumQuery<SessionStatus>("status")))
+            }
+        }
+
+        route("/api/v1/lessons") {
+            get {
+                val principal = call.webPrincipal(); val context = service.requireCenterContext(principal.userId, principal.activeCenterId)
+                val childId = call.request.queryParameters["childId"]?.let { runCatching { UUID.fromString(it) }.getOrElse { throw ApiException.validation("Некорректный идентификатор ребёнка") } }
+                val specialistId = call.request.queryParameters["specialistId"]?.let { runCatching { UUID.fromString(it) }.getOrElse { throw ApiException.validation("Некорректный идентификатор специалиста") } }
+                call.respond(lessons.listForWeb(context, childId, specialistId, call.enumQuery<SessionStatus>("status")))
+            }
+            get("/{lessonId}") {
+                val principal = call.webPrincipal(); val context = service.requireCenterContext(principal.userId, principal.activeCenterId)
+                call.respond(lessons.detailsForWeb(context, call.uuidParameter("lessonId")))
+            }
+        }
     }
 
     route("/api/v1/device-auth") {
@@ -116,6 +192,25 @@ fun Route.saasRoutes(service: SaasService, activationRateLimiter: ActivationRate
         authenticate("device-token") {
             get("/me") { call.respond(service.deviceMe(call.devicePrincipal().device)) }
             post("/heartbeat") { call.respond(service.heartbeat(call.devicePrincipal().device, call.receive())) }
+        }
+    }
+
+    authenticate("device-token") {
+        route("/api/v1/device-data") {
+            get("/children") { call.respond(service.deviceChildren(call.devicePrincipal().device)) }
+            get("/specialists") { call.respond(service.deviceSpecialists(call.devicePrincipal().device)) }
+        }
+        route("/api/v1/device-lessons") {
+            post { call.respond(HttpStatusCode.Created, lessons.create(call.devicePrincipal().device, call.receive<CreateDeviceLessonRequest>())) }
+            get("/current-assignment") {
+                val assignment = lessons.childAssignment(call.devicePrincipal().device)
+                if (assignment == null) call.respond(HttpStatusCode.NoContent) else call.respond(assignment)
+            }
+            get("/current") {
+                val current = lessons.currentSpecialistLesson(call.devicePrincipal().device)
+                if (current == null) call.respond(HttpStatusCode.NoContent) else call.respond(current)
+            }
+            get("/available-child-devices") { call.respond(lessons.availableChildDevices(call.devicePrincipal().device)) }
         }
     }
 }

@@ -38,7 +38,8 @@ data class ActiveSession(
     val sessionId: String,
     val sessionToken: String,
     val role: DeviceRole,
-    val connectionCode: String?
+    val connectionCode: String?,
+    val specialistName: String? = null
 )
 
 interface SessionStorage {
@@ -48,13 +49,18 @@ interface SessionStorage {
     suspend fun clearActiveSession()
 }
 
+interface LastSpecialistStorage {
+    suspend fun getLastSpecialistId(): String?
+    suspend fun saveLastSpecialistId(id: String)
+}
+
 sealed interface PinVerificationResult {
     data object Success : PinVerificationResult
     data object Incorrect : PinVerificationResult
     data class Locked(val remainingMillis: Long) : PinVerificationResult
 }
 
-class DevicePreferences(context: Context) : SessionStorage, DeviceIdentityStorage {
+class DevicePreferences(context: Context) : SessionStorage, DeviceIdentityStorage, LastSpecialistStorage {
     private val dataStore = context.applicationContext.deviceDataStore
     private val tokenCipher = DeviceTokenCipher()
 
@@ -181,6 +187,8 @@ class DevicePreferences(context: Context) : SessionStorage, DeviceIdentityStorag
             preferences.remove(ActiveSessionTokenKey)
             preferences.remove(ActiveSessionRoleKey)
             preferences.remove(ActiveSessionCodeKey)
+            preferences.remove(ActiveSessionSpecialistNameKey)
+            preferences.remove(LastSpecialistIdKey)
         }
     }
 
@@ -189,6 +197,7 @@ class DevicePreferences(context: Context) : SessionStorage, DeviceIdentityStorag
             preferences[ActiveSessionIdKey] = session.sessionId
             preferences[ActiveSessionTokenKey] = session.sessionToken
             preferences[ActiveSessionRoleKey] = session.role.name
+            if (session.specialistName == null) preferences.remove(ActiveSessionSpecialistNameKey) else preferences[ActiveSessionSpecialistNameKey] = session.specialistName
             if (session.connectionCode == null) {
                 preferences.remove(ActiveSessionCodeKey)
             } else {
@@ -206,7 +215,8 @@ class DevicePreferences(context: Context) : SessionStorage, DeviceIdentityStorag
             sessionId = sessionId,
             sessionToken = token,
             role = role,
-            connectionCode = values[ActiveSessionCodeKey]
+            connectionCode = values[ActiveSessionCodeKey],
+            specialistName = values[ActiveSessionSpecialistNameKey]
         )
     }
 
@@ -216,7 +226,14 @@ class DevicePreferences(context: Context) : SessionStorage, DeviceIdentityStorag
             preferences.remove(ActiveSessionTokenKey)
             preferences.remove(ActiveSessionRoleKey)
             preferences.remove(ActiveSessionCodeKey)
+            preferences.remove(ActiveSessionSpecialistNameKey)
         }
+    }
+
+    override suspend fun getLastSpecialistId(): String? = dataStore.data.first()[LastSpecialistIdKey]
+
+    override suspend fun saveLastSpecialistId(id: String) {
+        dataStore.edit { preferences -> preferences[LastSpecialistIdKey] = id }
     }
 
     private fun parseRole(value: String): DeviceRole? = runCatching {
@@ -249,6 +266,8 @@ class DevicePreferences(context: Context) : SessionStorage, DeviceIdentityStorag
         val ActiveSessionTokenKey: Preferences.Key<String> = stringPreferencesKey("active_session_token")
         val ActiveSessionRoleKey: Preferences.Key<String> = stringPreferencesKey("active_session_role")
         val ActiveSessionCodeKey: Preferences.Key<String> = stringPreferencesKey("active_session_connection_code")
+        val ActiveSessionSpecialistNameKey: Preferences.Key<String> = stringPreferencesKey("active_session_specialist_name")
+        val LastSpecialistIdKey: Preferences.Key<String> = stringPreferencesKey("last_specialist_id")
     }
 }
 

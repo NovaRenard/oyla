@@ -3,6 +3,8 @@ package kz.oyla.server.repository
 import java.time.Instant
 import java.util.UUID
 import kz.oyla.server.model.AuditLogRecord
+import kz.oyla.server.model.ChildRecord
+import kz.oyla.server.model.ChildStatus
 import kz.oyla.server.model.CenterMembershipRecord
 import kz.oyla.server.model.CenterRecord
 import kz.oyla.server.model.DeviceActivationCodeRecord
@@ -11,6 +13,8 @@ import kz.oyla.server.model.DeviceStatus
 import kz.oyla.server.model.RefreshTokenRecord
 import kz.oyla.server.model.UserCenterMembership
 import kz.oyla.server.model.UserRecord
+import kz.oyla.server.model.SpecialistRecord
+import kz.oyla.server.model.SpecialistStatus
 
 data class DeviceListFilter(
     val role: kz.oyla.server.model.DeviceRole? = null,
@@ -18,6 +22,9 @@ data class DeviceListFilter(
     val onlineSince: Instant? = null,
     val isOnline: Boolean? = null
 )
+
+data class ChildListFilter(val status: ChildStatus? = ChildStatus.ACTIVE, val search: String? = null)
+data class SpecialistListFilter(val status: SpecialistStatus? = SpecialistStatus.ACTIVE, val search: String? = null)
 
 sealed interface DeviceActivationResult {
     data class Activated(val device: DeviceRecord, val center: CenterRecord) : DeviceActivationResult
@@ -76,6 +83,16 @@ interface SaasRepository {
     suspend fun updateDevice(record: DeviceRecord): Boolean
     suspend fun unlinkDevice(centerId: UUID, id: UUID, now: Instant, audit: AuditLogRecord): DeviceRecord?
     suspend fun heartbeatDevice(id: UUID, appVersion: String?, androidVersion: String?, model: String?, now: Instant): DeviceRecord?
+
+    suspend fun createChild(record: ChildRecord): ChildRecord
+    suspend fun listChildren(centerId: UUID, filter: ChildListFilter): List<ChildRecord>
+    suspend fun findChild(centerId: UUID, id: UUID): ChildRecord?
+    suspend fun updateChild(record: ChildRecord): Boolean
+
+    suspend fun createSpecialist(record: SpecialistRecord): SpecialistRecord
+    suspend fun listSpecialists(centerId: UUID, filter: SpecialistListFilter): List<SpecialistRecord>
+    suspend fun findSpecialist(centerId: UUID, id: UUID): SpecialistRecord?
+    suspend fun updateSpecialist(record: SpecialistRecord): Boolean
 
     suspend fun recordAudit(record: AuditLogRecord)
 }

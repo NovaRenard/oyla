@@ -10,6 +10,8 @@ enum class MembershipStatus { ACTIVE, INVITED, BLOCKED }
 enum class DeviceStatus { ACTIVE, BLOCKED, UNLINKED }
 enum class ActivationCodeStatus { PENDING, USED, EXPIRED, CANCELLED }
 enum class AuditActorType { USER, DEVICE, SYSTEM }
+enum class ChildStatus { ACTIVE, ARCHIVED }
+enum class SpecialistStatus { ACTIVE, ARCHIVED }
 
 data class CenterRecord(
     val id: UUID,
@@ -99,4 +101,28 @@ data class AuditLogRecord(
     val metadata: String,
     val ipAddress: String?,
     val createdAt: Instant
+)
+
+/** A centre-owned child profile. This deliberately has no user credentials or clinical data. */
+data class ChildRecord(
+    val id: UUID,
+    val centerId: UUID,
+    val firstName: String,
+    val lastName: String?,
+    val birthDate: java.time.LocalDate?,
+    val status: ChildStatus,
+    val createdAt: Instant,
+    val updatedAt: Instant
+)
+
+/** The practitioner who conducts a lesson; it is not a web User account. */
+data class SpecialistRecord(
+    val id: UUID,
+    val centerId: UUID,
+    val firstName: String,
+    val lastName: String?,
+    val specialization: String?,
+    val status: SpecialistStatus,
+    val createdAt: Instant,
+    val updatedAt: Instant
 )

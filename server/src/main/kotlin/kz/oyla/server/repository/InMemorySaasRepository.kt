@@ -7,12 +7,14 @@ import kz.oyla.server.model.AuditLogRecord
 import kz.oyla.server.model.CenterMembershipRecord
 import kz.oyla.server.model.CenterRecord
 import kz.oyla.server.model.CenterStatus
+import kz.oyla.server.model.ChildRecord
 import kz.oyla.server.model.DeviceActivationCodeRecord
 import kz.oyla.server.model.DeviceRecord
 import kz.oyla.server.model.DeviceStatus
 import kz.oyla.server.model.RefreshTokenRecord
 import kz.oyla.server.model.UserCenterMembership
 import kz.oyla.server.model.UserRecord
+import kz.oyla.server.model.SpecialistRecord
 
 /** Route-test repository. Production uses DatabaseSaasRepository and Flyway schema. */
 class InMemorySaasRepository : SaasRepository {
@@ -22,6 +24,8 @@ class InMemorySaasRepository : SaasRepository {
     private val refreshTokens = linkedMapOf<UUID, RefreshTokenRecord>()
     private val codes = linkedMapOf<UUID, DeviceActivationCodeRecord>()
     private val devices = linkedMapOf<UUID, DeviceRecord>()
+    private val children = linkedMapOf<UUID, ChildRecord>()
+    private val specialists = linkedMapOf<UUID, SpecialistRecord>()
     private val audits = mutableListOf<AuditLogRecord>()
 
     /** Test-fixture hook for role-based route tests; production has no direct membership mutation API yet. */
@@ -128,6 +132,32 @@ class InMemorySaasRepository : SaasRepository {
             appVersion = appVersion ?: devices[id]!!.appVersion, androidVersion = androidVersion ?: devices[id]!!.androidVersion,
             model = model ?: devices[id]!!.model, lastSeenAt = now, updatedAt = now
         )?.also { devices[id] = it }
+    }
+
+    override suspend fun createChild(record: ChildRecord) = synchronized(this) { children[record.id] = record; record }
+    override suspend fun listChildren(centerId: UUID, filter: ChildListFilter) = synchronized(this) {
+        children.values.asSequence()
+            .filter { it.centerId == centerId && (filter.status == null || it.status == filter.status) }
+            .filter { child -> filter.search.isNullOrBlank() || "${child.firstName} ${child.lastName.orEmpty()}".contains(filter.search, ignoreCase = true) }
+            .sortedWith(compareBy<ChildRecord> { it.firstName.lowercase() }.thenBy { it.lastName.orEmpty().lowercase() }.thenBy { it.id })
+            .toList()
+    }
+    override suspend fun findChild(centerId: UUID, id: UUID) = synchronized(this) { children[id]?.takeIf { it.centerId == centerId } }
+    override suspend fun updateChild(record: ChildRecord) = synchronized(this) {
+        if (children[record.id]?.centerId != record.centerId) false else { children[record.id] = record; true }
+    }
+
+    override suspend fun createSpecialist(record: SpecialistRecord) = synchronized(this) { specialists[record.id] = record; record }
+    override suspend fun listSpecialists(centerId: UUID, filter: SpecialistListFilter) = synchronized(this) {
+        specialists.values.asSequence()
+            .filter { it.centerId == centerId && (filter.status == null || it.status == filter.status) }
+            .filter { specialist -> filter.search.isNullOrBlank() || "${specialist.firstName} ${specialist.lastName.orEmpty()} ${specialist.specialization.orEmpty()}".contains(filter.search, ignoreCase = true) }
+            .sortedWith(compareBy<SpecialistRecord> { it.firstName.lowercase() }.thenBy { it.lastName.orEmpty().lowercase() }.thenBy { it.id })
+            .toList()
+    }
+    override suspend fun findSpecialist(centerId: UUID, id: UUID) = synchronized(this) { specialists[id]?.takeIf { it.centerId == centerId } }
+    override suspend fun updateSpecialist(record: SpecialistRecord) = synchronized(this) {
+        if (specialists[record.id]?.centerId != record.centerId) false else { specialists[record.id] = record; true }
     }
     override suspend fun recordAudit(record: AuditLogRecord) = synchronized(this) { audits += record }
 }

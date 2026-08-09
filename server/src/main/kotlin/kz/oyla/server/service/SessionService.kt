@@ -154,6 +154,8 @@ class ApiException private constructor(
         fun centerNotFound() = ApiException(404, "CENTER_NOT_FOUND", "Центр не найден")
         fun membershipNotFound() = ApiException(403, "MEMBERSHIP_NOT_FOUND", "Нет активного доступа к центру")
         fun deviceNotFound() = ApiException(404, "DEVICE_NOT_FOUND", "Устройство не найдено")
+        fun childNotFound() = ApiException(404, "CHILD_NOT_FOUND", "Ребёнок не найден")
+        fun specialistNotFound() = ApiException(404, "SPECIALIST_NOT_FOUND", "Специалист не найден")
         fun deviceBlocked() = ApiException(403, "DEVICE_BLOCKED", "Устройство заблокировано")
         fun deviceUnlinked() = ApiException(403, "DEVICE_UNLINKED", "Устройство отвязано от центра")
         fun deviceAlreadyActivated() = ApiException(409, "DEVICE_ALREADY_ACTIVATED", "Этот планшет уже подключён к центру. Сначала отвяжите его в текущем кабинете")

@@ -18,6 +18,8 @@ import kz.oyla.server.model.AuditLogRecord
 import kz.oyla.server.model.CenterMembershipRecord
 import kz.oyla.server.model.CenterRecord
 import kz.oyla.server.model.CenterStatus
+import kz.oyla.server.model.ChildRecord
+import kz.oyla.server.model.ChildStatus
 import kz.oyla.server.model.DeviceActivationCodeRecord
 import kz.oyla.server.model.DeviceRecord
 import kz.oyla.server.model.DeviceRole
@@ -28,12 +30,17 @@ import kz.oyla.server.model.RefreshTokenRecord
 import kz.oyla.server.model.UserCenterMembership
 import kz.oyla.server.model.UserRecord
 import kz.oyla.server.model.UserStatus
+import kz.oyla.server.model.SpecialistRecord
+import kz.oyla.server.model.SpecialistStatus
 import kz.oyla.server.model.dto.ActivateDeviceRequest
 import kz.oyla.server.model.dto.ActivateDeviceResponse
 import kz.oyla.server.model.dto.ActivationCodeDto
 import kz.oyla.server.model.dto.AuthResponse
 import kz.oyla.server.model.dto.CenterDto
 import kz.oyla.server.model.dto.CenterMembershipDto
+import kz.oyla.server.model.dto.ChildDto
+import kz.oyla.server.model.dto.CreateChildRequest
+import kz.oyla.server.model.dto.CreateSpecialistRequest
 import kz.oyla.server.model.dto.CreateActivationCodeRequest
 import kz.oyla.server.model.dto.CreateActivationCodeResponse
 import kz.oyla.server.model.dto.DeviceAuthMeResponse
@@ -47,8 +54,13 @@ import kz.oyla.server.model.dto.SelectCenterResponse
 import kz.oyla.server.model.dto.UpdateCenterRequest
 import kz.oyla.server.model.dto.UpdateDeviceRequest
 import kz.oyla.server.model.dto.UserDto
+import kz.oyla.server.model.dto.SpecialistDto
+import kz.oyla.server.model.dto.UpdateChildRequest
+import kz.oyla.server.model.dto.UpdateSpecialistRequest
 import kz.oyla.server.repository.DeviceActivationResult
 import kz.oyla.server.repository.DeviceListFilter
+import kz.oyla.server.repository.ChildListFilter
+import kz.oyla.server.repository.SpecialistListFilter
 import kz.oyla.server.repository.SaasRepository
 import kz.oyla.server.util.SecretGenerator
 import org.mindrot.jbcrypt.BCrypt
@@ -334,6 +346,108 @@ class SaasService(
         return DeviceAuthMeResponse(updated.id.toString(), center.id.toString(), center.name, updated.name, updated.role, updated.status, now.toString())
     }
 
+    suspend fun listChildren(userId: UUID, centerId: UUID?, status: String?, search: String?): List<ChildDto> {
+        val context = requireCenterContext(userId, centerId)
+        return repository.listChildren(context.center.id, ChildListFilter(parseChildStatus(status), cleanSearch(search))).map { it.toDto() }
+    }
+
+    suspend fun getChild(userId: UUID, centerId: UUID?, childId: UUID): ChildDto {
+        val context = requireCenterContext(userId, centerId)
+        return (repository.findChild(context.center.id, childId) ?: throw ApiException.childNotFound()).toDto()
+    }
+
+    suspend fun createChild(userId: UUID, centerId: UUID?, request: CreateChildRequest, ipAddress: String?): ChildDto {
+        val context = requireCenterContext(userId, centerId, managementRoles)
+        val now = clock.instant()
+        val child = ChildRecord(UUID.randomUUID(), context.center.id, request.firstName.cleanRequired(100, "Имя"), request.lastName?.cleanOptional(100, "Фамилия"), request.birthDate.parseBirthDate(), ChildStatus.ACTIVE, now, now)
+        repository.createChild(child)
+        audit(context, "CHILD_CREATED", "CHILD", child.id, ipAddress, now)
+        return child.toDto()
+    }
+
+    suspend fun updateChild(userId: UUID, centerId: UUID?, childId: UUID, request: UpdateChildRequest, ipAddress: String?): ChildDto {
+        val context = requireCenterContext(userId, centerId, managementRoles)
+        val current = repository.findChild(context.center.id, childId) ?: throw ApiException.childNotFound()
+        val now = clock.instant()
+        val updated = current.copy(
+            firstName = request.firstName?.cleanRequired(100, "Имя") ?: current.firstName,
+            lastName = request.lastName.patchOptional(current.lastName, 100, "Фамилия"),
+            birthDate = request.birthDate.patchBirthDate(current.birthDate),
+            updatedAt = now
+        )
+        if (!repository.updateChild(updated)) throw ApiException.childNotFound()
+        audit(context, "CHILD_UPDATED", "CHILD", updated.id, ipAddress, now)
+        return updated.toDto()
+    }
+
+    suspend fun archiveChild(userId: UUID, centerId: UUID?, childId: UUID, restore: Boolean, ipAddress: String?): ChildDto {
+        val context = requireCenterContext(userId, centerId, managementRoles)
+        val current = repository.findChild(context.center.id, childId) ?: throw ApiException.childNotFound()
+        val target = if (restore) ChildStatus.ACTIVE else ChildStatus.ARCHIVED
+        val now = clock.instant()
+        val updated = current.copy(status = target, updatedAt = now)
+        if (!repository.updateChild(updated)) throw ApiException.childNotFound()
+        audit(context, if (restore) "CHILD_RESTORED" else "CHILD_ARCHIVED", "CHILD", updated.id, ipAddress, now)
+        return updated.toDto()
+    }
+
+    suspend fun listSpecialists(userId: UUID, centerId: UUID?, status: String?, search: String?): List<SpecialistDto> {
+        val context = requireCenterContext(userId, centerId)
+        return repository.listSpecialists(context.center.id, SpecialistListFilter(parseSpecialistStatus(status), cleanSearch(search))).map { it.toDto() }
+    }
+
+    suspend fun getSpecialist(userId: UUID, centerId: UUID?, specialistId: UUID): SpecialistDto {
+        val context = requireCenterContext(userId, centerId)
+        return (repository.findSpecialist(context.center.id, specialistId) ?: throw ApiException.specialistNotFound()).toDto()
+    }
+
+    suspend fun createSpecialist(userId: UUID, centerId: UUID?, request: CreateSpecialistRequest, ipAddress: String?): SpecialistDto {
+        val context = requireCenterContext(userId, centerId, managementRoles)
+        val now = clock.instant()
+        val specialist = SpecialistRecord(UUID.randomUUID(), context.center.id, request.firstName.cleanRequired(100, "Имя"), request.lastName?.cleanOptional(100, "Фамилия"), request.specialization?.cleanOptional(160, "Специализация"), SpecialistStatus.ACTIVE, now, now)
+        repository.createSpecialist(specialist)
+        audit(context, "SPECIALIST_CREATED", "SPECIALIST", specialist.id, ipAddress, now)
+        return specialist.toDto()
+    }
+
+    suspend fun updateSpecialist(userId: UUID, centerId: UUID?, specialistId: UUID, request: UpdateSpecialistRequest, ipAddress: String?): SpecialistDto {
+        val context = requireCenterContext(userId, centerId, managementRoles)
+        val current = repository.findSpecialist(context.center.id, specialistId) ?: throw ApiException.specialistNotFound()
+        val now = clock.instant()
+        val updated = current.copy(
+            firstName = request.firstName?.cleanRequired(100, "Имя") ?: current.firstName,
+            lastName = request.lastName.patchOptional(current.lastName, 100, "Фамилия"),
+            specialization = request.specialization.patchOptional(current.specialization, 160, "Специализация"),
+            updatedAt = now
+        )
+        if (!repository.updateSpecialist(updated)) throw ApiException.specialistNotFound()
+        audit(context, "SPECIALIST_UPDATED", "SPECIALIST", updated.id, ipAddress, now)
+        return updated.toDto()
+    }
+
+    suspend fun archiveSpecialist(userId: UUID, centerId: UUID?, specialistId: UUID, restore: Boolean, ipAddress: String?): SpecialistDto {
+        val context = requireCenterContext(userId, centerId, managementRoles)
+        val current = repository.findSpecialist(context.center.id, specialistId) ?: throw ApiException.specialistNotFound()
+        val target = if (restore) SpecialistStatus.ACTIVE else SpecialistStatus.ARCHIVED
+        val now = clock.instant()
+        val updated = current.copy(status = target, updatedAt = now)
+        if (!repository.updateSpecialist(updated)) throw ApiException.specialistNotFound()
+        audit(context, if (restore) "SPECIALIST_RESTORED" else "SPECIALIST_ARCHIVED", "SPECIALIST", updated.id, ipAddress, now)
+        return updated.toDto()
+    }
+
+    suspend fun deviceChildren(device: DeviceRecord): List<ChildDto> {
+        val active = requireActiveDevice(device)
+        requireSpecialistDevice(active)
+        return repository.listChildren(active.centerId, ChildListFilter(ChildStatus.ACTIVE)).map { it.toDto() }
+    }
+
+    suspend fun deviceSpecialists(device: DeviceRecord): List<SpecialistDto> {
+        val active = requireActiveDevice(device)
+        requireSpecialistDevice(active)
+        return repository.listSpecialists(active.centerId, SpecialistListFilter(SpecialistStatus.ACTIVE)).map { it.toDto() }
+    }
+
     suspend fun requireCenterContext(userId: UUID, activeCenterId: UUID?, roles: Set<MembershipRole> = emptySet()): CenterContext {
         val user = requireActiveUser(userId)
         val centerId = activeCenterId ?: throw ApiException.membershipNotFound()
@@ -400,6 +514,35 @@ class SaasService(
         if (center.status != CenterStatus.ACTIVE) throw ApiException.forbidden()
         return device
     }
+
+    private fun requireSpecialistDevice(device: DeviceRecord) {
+        if (device.role != DeviceRole.SPECIALIST) throw ApiException.forbidden()
+    }
+    private suspend fun audit(context: CenterContext, action: String, entityType: String, entityId: UUID, ipAddress: String?, now: Instant) =
+        repository.recordAudit(AuditLogRecord(UUID.randomUUID(), context.center.id, AuditActorType.USER, context.user.id, action, entityType, entityId, "{}", ipAddress, now))
+    private fun parseChildStatus(raw: String?): ChildStatus? = when (raw?.uppercase()) {
+        null, "ACTIVE" -> ChildStatus.ACTIVE
+        "ARCHIVED" -> ChildStatus.ARCHIVED
+        "ALL" -> null
+        else -> throw ApiException.validation("Некорректный параметр status")
+    }
+    private fun parseSpecialistStatus(raw: String?): SpecialistStatus? = when (raw?.uppercase()) {
+        null, "ACTIVE" -> SpecialistStatus.ACTIVE
+        "ARCHIVED" -> SpecialistStatus.ARCHIVED
+        "ALL" -> null
+        else -> throw ApiException.validation("Некорректный параметр status")
+    }
+    private fun cleanSearch(value: String?): String? = value?.trim()?.takeIf { it.isNotEmpty() }?.also { if (it.length > 100) throw ApiException.validation("Поисковый запрос слишком длинный") }
+    private fun String?.patchOptional(current: String?, maxLength: Int, label: String): String? {
+        if (this == null) return current
+        val cleaned = trim()
+        if (cleaned.length > maxLength) throw ApiException.validation("$label заполнено некорректно")
+        return cleaned.takeIf { it.isNotEmpty() }
+    }
+    private fun String?.parseBirthDate(): java.time.LocalDate? = this?.trim()?.takeIf { it.isNotEmpty() }?.let {
+        runCatching { java.time.LocalDate.parse(it) }.getOrElse { throw ApiException.validation("Некорректная дата рождения") }
+    }
+    private fun String?.patchBirthDate(current: java.time.LocalDate?): java.time.LocalDate? = if (this == null) current else parseBirthDate()
     private suspend fun failedActivation(ipAddress: String?) = repository.recordAudit(
         AuditLogRecord(UUID.randomUUID(), null, AuditActorType.SYSTEM, null, "DEVICE_ACTIVATION_FAILED", "DEVICE_ACTIVATION_CODE", null, "{\"reason\":\"invalid_code\"}", ipAddress, clock.instant())
     )
@@ -423,6 +566,12 @@ class SaasService(
     private fun UserCenterMembership.toDto() = CenterMembershipDto(center.toDto(), membership.role, membership.status)
     private fun DeviceRecord.toDto(now: Instant) = DeviceDto(id.toString(), name, role, status, appVersion, androidVersion, model, lastSeenAt?.toString(), activatedAt?.toString(), lastSeenAt?.isAfter(now.minus(config.onlineWindow)) == true)
     private fun DeviceActivationCodeRecord.toDto() = ActivationCodeDto(id.toString(), deviceName, deviceRole, status, expiresAt.toString(), createdAt.toString())
+    private fun ChildRecord.toDto() = ChildDto(id.toString(), firstName, lastName, birthDate?.toString(), status, createdAt.toString(), updatedAt.toString())
+    private fun SpecialistRecord.toDto() = SpecialistDto(id.toString(), firstName, lastName, specialization, status, createdAt.toString(), updatedAt.toString())
+
+    private companion object {
+        val managementRoles = setOf(MembershipRole.OWNER, MembershipRole.ADMIN)
+    }
 
     private data class ProvisionedCenter(val user: UserRecord, val center: CenterRecord, val membership: CenterMembershipRecord)
 }
