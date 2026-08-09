@@ -45,9 +45,11 @@ class LessonRoutesTest {
         val child = createChild(a.accessToken, "Алихан")
         val specialist = createSpecialist(a.accessToken, "Анна")
         val foreignChild = createChild(b.accessToken, "Чужой")
+        val foreignSpecialist = createSpecialist(b.accessToken, "Бек")
         val specialistTablet = activate(createCode(a.accessToken, "Кабинет", DeviceRole.SPECIALIST).activationCode, "lesson-specialist")
         val childTablet = activate(createCode(a.accessToken, "Алихан", DeviceRole.CHILD).activationCode, "lesson-child")
         val otherChildTablet = activate(createCode(a.accessToken, "Другой", DeviceRole.CHILD).activationCode, "lesson-other-child")
+        val foreignChildTablet = activate(createCode(b.accessToken, "Чужой планшет", DeviceRole.CHILD).activationCode, "lesson-foreign-child")
 
         val created = createLesson(specialistTablet.deviceToken, specialist.id, child.id, childTablet.deviceId)
         assertTrue(created.sessionToken.isNotBlank())
@@ -65,6 +67,8 @@ class LessonRoutesTest {
         assertFalse(history.bodyAsText().contains("connectionCode"))
         assertEquals(HttpStatusCode.NotFound, client.get("/api/v1/lessons/${created.sessionId}") { bearer(b.accessToken) }.status)
         assertEquals(HttpStatusCode.NotFound, createLessonResponse(specialistTablet.deviceToken, specialist.id, foreignChild.id, childTablet.deviceId).status)
+        assertEquals(HttpStatusCode.NotFound, createLessonResponse(specialistTablet.deviceToken, foreignSpecialist.id, child.id, childTablet.deviceId).status)
+        assertEquals(HttpStatusCode.Conflict, createLessonResponse(specialistTablet.deviceToken, specialist.id, child.id, foreignChildTablet.deviceId).status)
 
         assertEquals(HttpStatusCode.Forbidden, createLessonResponse(childTablet.deviceToken, specialist.id, child.id, otherChildTablet.deviceId).status)
         assertEquals(HttpStatusCode.NoContent, client.post("/api/v1/sessions/${created.sessionId}/complete") { bearer(created.sessionToken) }.status)
