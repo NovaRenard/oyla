@@ -6,9 +6,28 @@ import kotlinx.serialization.Serializable
 
 /** The ownership boundary is deliberately explicit in every content table. */
 @Serializable enum class ContentOwnership { SYSTEM, CENTER }
-@Serializable enum class ActivityType { SINGLE_CHOICE }
+@Serializable enum class ActivityType { SINGLE_CHOICE, WHITEBOARD }
 @Serializable enum class ContentStatus { ACTIVE, ARCHIVED }
 @Serializable enum class MediaType { IMAGE, AUDIO }
+@Serializable enum class WhiteboardColor { BLACK, BLUE, GREEN, RED, ORANGE, PURPLE }
+@Serializable enum class WhiteboardBrushSize { THIN, MEDIUM, THICK }
+@Serializable enum class WhiteboardTool { PEN, ERASER }
+
+/**
+ * Whiteboard-specific content. It deliberately uses a bounded palette and brush enum so a
+ * client cannot smuggle arbitrary colours or pixel widths into a lesson session.
+ */
+@Serializable
+data class WhiteboardExerciseConfig(
+    val backgroundAssetId: String? = null,
+    val backgroundUrl: String? = null,
+    val childDrawingInitiallyEnabled: Boolean = true,
+    val availableColors: List<WhiteboardColor> = listOf(WhiteboardColor.BLACK, WhiteboardColor.BLUE, WhiteboardColor.GREEN, WhiteboardColor.RED),
+    val defaultColor: WhiteboardColor = WhiteboardColor.BLACK,
+    val defaultBrushSize: WhiteboardBrushSize = WhiteboardBrushSize.MEDIUM,
+    val allowEraser: Boolean = true,
+    val allowClear: Boolean = true
+)
 
 data class MediaAssetRecord(
     val id: UUID,
@@ -46,6 +65,7 @@ data class ContentExerciseRecord(
     val createdAt: Instant,
     val updatedAt: Instant,
     val options: List<ContentExerciseOptionRecord> = emptyList(),
+    val whiteboardConfig: WhiteboardExerciseConfig? = null,
     /** Deterministic link used only to migrate the five pre-v8 exercises. */
     val legacyKey: String? = null
 )
@@ -79,8 +99,9 @@ data class ExerciseSnapshot(
     val audioAssetId: String? = null,
     val audioUrl: String? = null,
     val localAudioAssetKey: String? = null,
-    val options: List<ExerciseSnapshotOption>,
-    val correctOptionId: String
+    val options: List<ExerciseSnapshotOption> = emptyList(),
+    val correctOptionId: String? = null,
+    val whiteboardConfig: WhiteboardExerciseConfig? = null
 )
 
 @Serializable

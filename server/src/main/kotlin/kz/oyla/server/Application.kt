@@ -37,6 +37,9 @@ import kz.oyla.server.repository.InMemorySaasRepository
 import kz.oyla.server.repository.ContentRepository
 import kz.oyla.server.repository.DatabaseContentRepository
 import kz.oyla.server.repository.InMemoryContentRepository
+import kz.oyla.server.repository.WhiteboardRepository
+import kz.oyla.server.repository.DatabaseWhiteboardRepository
+import kz.oyla.server.repository.InMemoryWhiteboardRepository
 import kz.oyla.server.routes.healthRoutes
 import kz.oyla.server.routes.contentRoutes
 import kz.oyla.server.routes.sessionRoutes
@@ -50,6 +53,8 @@ import kz.oyla.server.service.SaasConfig
 import kz.oyla.server.service.SaasService
 import kz.oyla.server.service.LessonService
 import kz.oyla.server.service.ContentService
+import kz.oyla.server.service.WhiteboardService
+import kz.oyla.server.service.SessionLockRegistry
 import kz.oyla.server.util.ActivationRateLimiter
 import kz.oyla.server.storage.LocalMediaStorage
 
@@ -77,7 +82,8 @@ fun Application.module(
     saasRepository: SaasRepository? = null,
     contentRepository: ContentRepository? = null,
     saasConfig: SaasConfig = SaasConfig.fromEnvironment(),
-    activationRateLimiter: ActivationRateLimiter? = null
+    activationRateLimiter: ActivationRateLimiter? = null,
+    whiteboardRepository: WhiteboardRepository? = null
 ) {
     val json = Json {
         ignoreUnknownKeys = true
@@ -95,7 +101,10 @@ fun Application.module(
         DatabaseExerciseRepository()
     }
     val sessionService = SessionService(repository, clock = clock, codeTtl = codeTtl)
-    val exerciseService = ExerciseService(exercises, clock)
+    val sessionLocks = SessionLockRegistry()
+    val boardRepository = whiteboardRepository ?: if (repository is InMemorySessionRepository) InMemoryWhiteboardRepository() else DatabaseWhiteboardRepository()
+    val whiteboardService = WhiteboardService(boardRepository, exercises, sessionLocks, clock)
+    val exerciseService = ExerciseService(exercises, clock, whiteboardService, sessionLocks)
     val eventHub = SessionEventHub(json)
     val tenants = saasRepository ?: if (repository is InMemorySessionRepository) InMemorySaasRepository() else DatabaseSaasRepository()
     val saasService = SaasService(tenants, saasConfig, clock = clock)
@@ -137,7 +146,7 @@ fun Application.module(
     routing {
         healthRoutes()
         sessionRoutes(sessionService, exerciseService, eventHub, lessonService)
-        sessionWebSocketRoutes(sessionService, exerciseService, eventHub, json)
+        sessionWebSocketRoutes(sessionService, exerciseService, whiteboardService, eventHub, json)
         contentRoutes(saasService, contentService)
         saasRoutes(saasService, lessonService, contentService, limiter)
     }

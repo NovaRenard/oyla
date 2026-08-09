@@ -5,6 +5,8 @@ import kz.oyla.server.model.ActivityType
 import kz.oyla.server.model.ContentOwnership
 import kz.oyla.server.model.ContentStatus
 import kz.oyla.server.model.MediaType
+import kz.oyla.server.model.WhiteboardBrushSize
+import kz.oyla.server.model.WhiteboardColor
 
 @Serializable data class MediaAssetDto(
     val id: String,
@@ -38,9 +40,21 @@ import kz.oyla.server.model.MediaType
     val localAudioAssetKey: String? = null,
     val status: ContentStatus,
     val options: List<ExerciseOptionContentDto>,
+    val whiteboardConfig: WhiteboardExerciseConfigDto? = null,
     val templateUsageCount: Int = 0,
     val createdAt: String,
     val updatedAt: String
+)
+
+@Serializable data class WhiteboardExerciseConfigDto(
+    val backgroundAssetId: String? = null,
+    val backgroundUrl: String? = null,
+    val childDrawingInitiallyEnabled: Boolean = true,
+    val availableColors: List<WhiteboardColor> = emptyList(),
+    val defaultColor: WhiteboardColor = WhiteboardColor.BLACK,
+    val defaultBrushSize: WhiteboardBrushSize = WhiteboardBrushSize.MEDIUM,
+    val allowEraser: Boolean = true,
+    val allowClear: Boolean = true
 )
 
 @Serializable data class ExerciseOptionInput(
@@ -56,7 +70,8 @@ import kz.oyla.server.model.MediaType
     val instructionText: String,
     val activityType: ActivityType = ActivityType.SINGLE_CHOICE,
     val instructionAudioAssetId: String? = null,
-    val options: List<ExerciseOptionInput>
+    val options: List<ExerciseOptionInput> = emptyList(),
+    val whiteboardConfig: WhiteboardExerciseConfigDto? = null
 )
 
 /** PATCH is a complete type-specific definition to keep validation and ordering atomic. */
@@ -64,7 +79,8 @@ import kz.oyla.server.model.MediaType
     val title: String? = null,
     val instructionText: String? = null,
     val instructionAudioAssetId: String? = null,
-    val options: List<ExerciseOptionInput>? = null
+    val options: List<ExerciseOptionInput>? = null,
+    val whiteboardConfig: WhiteboardExerciseConfigDto? = null
 )
 
 @Serializable data class LessonTemplateItemDto(

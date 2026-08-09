@@ -18,6 +18,12 @@ import kz.oyla.server.model.dto.ExerciseChangedEvent
 import kz.oyla.server.model.dto.ExercisePlanCompletedEvent
 import kz.oyla.server.model.dto.SessionCancelledEvent
 import kz.oyla.server.model.dto.SessionCompletedEvent
+import kz.oyla.server.model.dto.WhiteboardChildPermissionChangedEvent
+import kz.oyla.server.model.dto.WhiteboardClearEvent
+import kz.oyla.server.model.dto.WhiteboardStrokeCompletedEvent
+import kz.oyla.server.model.dto.WhiteboardStrokePointsEvent
+import kz.oyla.server.model.dto.WhiteboardStrokeStartedEvent
+import kz.oyla.server.model.dto.WhiteboardUndoEvent
 
 class SessionEventHub(private val json: Json) {
     private data class Connection(
@@ -70,7 +76,7 @@ class SessionEventHub(private val json: Json) {
         val event = ExerciseStartedEvent(
             sessionId = sessionId.toString(), sessionExerciseId = checkNotNull(state.sessionExerciseId),
             exerciseStatus = state.exerciseStatus, startedAt = checkNotNull(state.startedAt),
-            currentPosition = state.currentPosition, totalExercises = state.totalExercises
+            currentPosition = state.currentPosition, totalExercises = state.totalExercises, whiteboardState = state.whiteboardState
         )
         publishToAll(sessionId, json.encodeToString(event))
     }
@@ -99,7 +105,7 @@ class SessionEventHub(private val json: Json) {
             correctOptionId = specialistState.correctOptionId, currentPosition = specialistState.currentPosition,
             totalExercises = specialistState.totalExercises, attemptCount = specialistState.attemptCount,
             latestAnswer = specialistState.latestAnswer, startedAt = specialistState.startedAt,
-            planCompleted = specialistState.planCompleted
+            planCompleted = specialistState.planCompleted, whiteboardState = specialistState.whiteboardState
         )
         publishToRole(sessionId, DeviceRole.SPECIALIST, json.encodeToString(event))
         publishToRole(sessionId, DeviceRole.CHILD, json.encodeToString(event.copy(exercise = null, correctOptionId = null)))
@@ -111,6 +117,13 @@ class SessionEventHub(private val json: Json) {
             totalExercises = state.totalExercises, planCompleted = true
         )))
     }
+
+    suspend fun publishWhiteboardStrokeStarted(sessionId: UUID, event: WhiteboardStrokeStartedEvent) = publishToAll(sessionId, json.encodeToString(event))
+    suspend fun publishWhiteboardPoints(sessionId: UUID, event: WhiteboardStrokePointsEvent) = publishToAll(sessionId, json.encodeToString(event))
+    suspend fun publishWhiteboardStrokeCompleted(sessionId: UUID, event: WhiteboardStrokeCompletedEvent) = publishToAll(sessionId, json.encodeToString(event))
+    suspend fun publishWhiteboardClear(sessionId: UUID, event: WhiteboardClearEvent) = publishToAll(sessionId, json.encodeToString(event))
+    suspend fun publishWhiteboardUndo(sessionId: UUID, event: WhiteboardUndoEvent) = publishToAll(sessionId, json.encodeToString(event))
+    suspend fun publishWhiteboardPermission(sessionId: UUID, event: WhiteboardChildPermissionChangedEvent) = publishToAll(sessionId, json.encodeToString(event))
 
     private suspend fun publishToRole(sessionId: UUID, role: DeviceRole, payload: String) {
         connections[sessionId]

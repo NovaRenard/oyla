@@ -28,6 +28,7 @@ import kz.oyla.server.repository.SessionRecord
 import kz.oyla.server.repository.SessionRepository
 import kz.oyla.server.repository.SessionExerciseRecord
 import kz.oyla.server.model.ExerciseStatus
+import kz.oyla.server.model.ActivityType
 import kz.oyla.server.repository.SpecialistListFilter
 import kz.oyla.server.util.CodeGenerator
 
@@ -57,6 +58,11 @@ class LessonService(
             throw ApiException.conflict("Один из планшетов уже участвует в активном занятии")
         }
         val template = content.snapshotTemplate(center.id, templateId)
+        if (template.exercises.any { it.activityType == ActivityType.WHITEBOARD }) {
+            if (!specialistDevice.supportsWhiteboard() || !childDevice.supportsWhiteboard()) {
+                throw ApiException.conflict("Шаблон содержит «Белую доску». Обновите оба планшета до версии Oyla 2.0 или новее")
+            }
+        }
         val now = clock.instant()
         repeat(50) {
             val session = SessionRecord(
@@ -114,7 +120,7 @@ class LessonService(
         val specialistDevice = tenants.findDevice(context.center.id, checkNotNull(record.lesson.session.specialistDeviceUuid)) ?: throw ApiException.notFound("Планшет не найден")
         val childDevice = tenants.findDevice(context.center.id, record.lesson.participant.deviceId) ?: throw ApiException.notFound("Планшет не найден")
         return LessonDetailsDto(lesson, specialistDevice.id.toString(), specialistDevice.name, childDevice.id.toString(), childDevice.name,
-            record.exercises.map { LessonExerciseDto(it.position, it.exerciseId, it.instructionText, it.status, it.attemptCount, it.incorrectAttempts, it.timeToCorrectMs) })
+            record.exercises.map { LessonExerciseDto(it.position, it.exerciseId, it.instructionText, it.status, it.attemptCount, it.incorrectAttempts, it.timeToCorrectMs, it.activityType, it.durationMs, it.strokeCount, it.childStrokeCount, it.specialistStrokeCount) })
     }
 
     suspend fun ensureChildInCenter(context: CenterContext, childId: UUID) {
@@ -164,5 +170,10 @@ class LessonService(
     private fun DeviceRecord.toDto(now: Instant) = DeviceDto(id.toString(), name, role, status, appVersion, androidVersion, model, lastSeenAt?.toString(), activatedAt?.toString(), lastSeenAt?.isAfter(now.minus(config.onlineWindow)) == true)
     private fun kz.oyla.server.model.ChildRecord.fullName() = listOf(firstName, lastName).filterNotNull().joinToString(" ")
     private fun kz.oyla.server.model.SpecialistRecord.fullName() = listOf(firstName, lastName).filterNotNull().joinToString(" ")
+    /** Old clients never receive a whiteboard assignment; 2.0 is the first capability release. */
+    private fun DeviceRecord.supportsWhiteboard(): Boolean {
+        val numbers = appVersion.orEmpty().split('.', '-', '_').mapNotNull { it.toIntOrNull() }
+        return numbers.firstOrNull()?.let { major -> major > 2 || (major == 2 && (numbers.getOrNull(1) ?: 0) >= 0) } == true
+    }
     private fun String.uuid(label: String): UUID = runCatching { UUID.fromString(this) }.getOrElse { throw ApiException.validation("Некорректный идентификатор: $label") }
 }

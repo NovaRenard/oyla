@@ -14,6 +14,7 @@ import kz.oyla.server.model.dto.ShowExerciseRequest
 import kz.oyla.server.model.dto.StartExerciseRequest
 import kz.oyla.server.model.dto.AnswerExerciseRequest
 import kz.oyla.server.model.dto.NextExerciseRequest
+import kz.oyla.server.model.dto.CompleteWhiteboardExerciseRequest
 import kz.oyla.server.service.SessionEventHub
 import kz.oyla.server.service.ExerciseService
 import kz.oyla.server.service.SessionService
@@ -88,6 +89,13 @@ fun Route.sessionRoutes(service: SessionService, exercises: ExerciseService, eve
                 if (state.planCompleted) eventHub.publishExercisePlanCompleted(authorized.session.id, state)
             }
             call.respond(result)
+        }
+        post("/{sessionId}/exercise/complete-whiteboard") {
+            val authorized = service.authorize(call.parameters["sessionId"].orEmpty(), call.bearerToken())
+            val state = exercises.completeWhiteboard(authorized, call.receive<CompleteWhiteboardExerciseRequest>().sessionExerciseId)
+            eventHub.publishExerciseChanged(authorized.session.id, state)
+            if (state.planCompleted) eventHub.publishExercisePlanCompleted(authorized.session.id, state)
+            call.respond(state)
         }
         post("/{sessionId}/exercise/next") {
             val authorized = service.authorize(call.parameters["sessionId"].orEmpty(), call.bearerToken())

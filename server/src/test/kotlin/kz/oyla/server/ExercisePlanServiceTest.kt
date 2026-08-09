@@ -6,19 +6,30 @@ import java.time.ZoneId
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import kz.oyla.server.model.DeviceRole
+import kz.oyla.server.model.ActivityType
 import kz.oyla.server.model.ExerciseStatus
 import kz.oyla.server.model.SessionStatus
+import kz.oyla.server.model.ExerciseSnapshot
+import kz.oyla.server.model.ExerciseSnapshotOption
+import kz.oyla.server.model.WhiteboardExerciseConfig
+import kz.oyla.server.model.WhiteboardBrushSize
+import kz.oyla.server.model.WhiteboardColor
+import kz.oyla.server.model.WhiteboardTool
 import kz.oyla.server.model.dto.AnswerExerciseRequest
 import kz.oyla.server.model.dto.NextExerciseRequest
 import kz.oyla.server.model.dto.ShowExerciseRequest
 import kz.oyla.server.model.dto.StartExerciseRequest
+import kz.oyla.server.model.dto.WhiteboardPointDto
 import kz.oyla.server.repository.ExerciseAttemptRecord
 import kz.oyla.server.repository.InMemoryExerciseRepository
+import kz.oyla.server.repository.InMemoryWhiteboardRepository
 import kz.oyla.server.repository.SessionExerciseRecord
 import kz.oyla.server.repository.SessionRecord
 import kz.oyla.server.service.ApiException
 import kz.oyla.server.service.AuthorizedSession
 import kz.oyla.server.service.ExerciseService
+import kz.oyla.server.service.SessionLockRegistry
+import kz.oyla.server.service.WhiteboardService
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -138,6 +149,39 @@ class ExercisePlanServiceTest {
         val shown = fixture.service.stateFor(fixture.child)
         assertNotNull(shown.exercise)
         assertNull(shown.correctOptionId)
+    }
+
+    @Test fun `mixed plan completes WHITEBOARD only through specialist and reports stroke metrics`() = runBlocking {
+        val clock = MutableClock(Instant.parse("2026-08-03T09:00:00Z")); val repository = InMemoryExerciseRepository(); val locks = SessionLockRegistry()
+        val boards = WhiteboardService(InMemoryWhiteboardRepository(), repository, locks, clock)
+        val service = ExerciseService(repository, clock, boards, locks); val sessionId = UUID.randomUUID()
+        val whiteboard = SessionExerciseRecord(UUID.randomUUID(), sessionId, UUID.randomUUID().toString(), ExerciseStatus.PENDING, null, null, null, clock.instant(), 1, true,
+            ExerciseSnapshot(UUID.randomUUID().toString(), ActivityType.WHITEBOARD, "Доска", "Нарисуй", whiteboardConfig = WhiteboardExerciseConfig()))
+        val choiceSource = UUID.randomUUID().toString(); val choice = SessionExerciseRecord(UUID.randomUUID(), sessionId, choiceSource, ExerciseStatus.PENDING, null, null, null, clock.instant(), 2, false,
+            ExerciseSnapshot(choiceSource, ActivityType.SINGLE_CHOICE, "Выбор", "Выбери", options = listOf(ExerciseSnapshotOption("yes", "Да", position = 1), ExerciseSnapshotOption("no", "Нет", position = 2)), correctOptionId = "yes"))
+        service.ensureSnapshotPlan(listOf(whiteboard, choice))
+        val session = SessionRecord(sessionId, "1234", "Алина", SessionStatus.READY, "specialist", "specialist-token", "child", "child-token", clock.instant(), clock.instant().plusSeconds(3600), clock.instant(), null, isManaged = true)
+        val specialist = AuthorizedSession(session, DeviceRole.SPECIALIST); val child = AuthorizedSession(session, DeviceRole.CHILD)
+
+        service.show(specialist, ShowExerciseRequest(whiteboard.exerciseId)); service.start(specialist, StartExerciseRequest(whiteboard.id.toString()))
+        val strokeId = UUID.randomUUID().toString()
+        boards.startStroke(specialist, whiteboard.id.toString(), strokeId, WhiteboardTool.PEN, WhiteboardColor.BLUE, WhiteboardBrushSize.MEDIUM)
+        boards.appendPoints(specialist, whiteboard.id.toString(), strokeId, listOf(WhiteboardPointDto(.1f, .1f)))
+        boards.completeStroke(specialist, whiteboard.id.toString(), strokeId, UUID.randomUUID().toString())
+        val childAnswer = runCatching { service.answer(child, AnswerExerciseRequest(whiteboard.id.toString(), "yes", UUID.randomUUID().toString())) }.exceptionOrNull()
+        val childCompletion = runCatching { service.completeWhiteboard(child, whiteboard.id.toString()) }.exceptionOrNull()
+        clock.advanceSeconds(5)
+        service.completeWhiteboard(specialist, whiteboard.id.toString())
+        service.next(specialist, NextExerciseRequest(whiteboard.id.toString()))
+        service.show(specialist, ShowExerciseRequest(choice.exerciseId)); service.start(specialist, StartExerciseRequest(choice.id.toString()))
+        clock.advanceSeconds(2); service.answer(child, AnswerExerciseRequest(choice.id.toString(), "yes", UUID.randomUUID().toString()))
+        val summary = service.summary(specialist)
+
+        assertEquals("CONFLICT", (childAnswer as ApiException).errorCode)
+        assertEquals("FORBIDDEN", (childCompletion as ApiException).errorCode)
+        assertEquals(listOf(ActivityType.WHITEBOARD, ActivityType.SINGLE_CHOICE), summary.exercises.map { it.activityType })
+        assertEquals(1, summary.exercises.first().specialistStrokeCount)
+        assertEquals(0, summary.exercises.first().attemptCount)
     }
 
     private class Fixture {

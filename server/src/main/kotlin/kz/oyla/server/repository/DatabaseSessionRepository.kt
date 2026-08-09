@@ -298,14 +298,16 @@ class DatabaseSessionRepository : SessionRepository {
                WHERE s.is_managed = TRUE AND s.center_id = ? AND s.id = ?"""
         ) { setObject(1, centerId); setObject(2, sessionId) } ?: return@database null
         val exercises = connection.prepareStatement(
-            """SELECT se.position, se.exercise_id, COALESCE(se.snapshot_json ->> 'instructionText', e.instruction_text) AS instruction_text, se.status,
-                      COUNT(a.id) AS attempt_count,
-                      COUNT(a.id) FILTER (WHERE a.is_correct = FALSE) AS incorrect_attempts,
-                      MIN(a.response_time_ms) FILTER (WHERE a.is_correct = TRUE) AS time_to_correct_ms
+            """SELECT se.position, se.exercise_id, se.activity_type, se.started_at, se.completed_at,
+                      COALESCE(se.snapshot_json ->> 'instructionText', e.instruction_text) AS instruction_text, se.status,
+                      (SELECT COUNT(*) FROM attempts a WHERE a.session_exercise_id = se.id) AS attempt_count,
+                      (SELECT COUNT(*) FROM attempts a WHERE a.session_exercise_id = se.id AND a.is_correct = FALSE) AS incorrect_attempts,
+                      (SELECT MIN(a.response_time_ms) FROM attempts a WHERE a.session_exercise_id = se.id AND a.is_correct = TRUE) AS time_to_correct_ms,
+                      (SELECT COUNT(*) FROM whiteboard_strokes ws WHERE ws.session_exercise_id = se.id) AS stroke_count,
+                      (SELECT COUNT(*) FROM whiteboard_strokes ws WHERE ws.session_exercise_id = se.id AND ws.actor_role = 'CHILD') AS child_stroke_count,
+                      (SELECT COUNT(*) FROM whiteboard_strokes ws WHERE ws.session_exercise_id = se.id AND ws.actor_role = 'SPECIALIST') AS specialist_stroke_count
                FROM session_exercises se LEFT JOIN exercises e ON e.id = se.exercise_id
-               LEFT JOIN attempts a ON a.session_exercise_id = se.id
                WHERE se.session_id = ?
-               GROUP BY se.position, se.exercise_id, se.snapshot_json, e.instruction_text, se.status
                ORDER BY se.position"""
         ).use { statement ->
             statement.setObject(1, sessionId); statement.executeQuery().use { result ->
@@ -394,7 +396,12 @@ class DatabaseSessionRepository : SessionRepository {
     )
     private fun ResultSet.toLessonExerciseHistory() = LessonExerciseHistoryRecord(
         getInt("position"), getString("exercise_id"), getString("instruction_text"), kz.oyla.server.model.ExerciseStatus.valueOf(getString("status")),
-        getInt("attempt_count"), getInt("incorrect_attempts"), getLong("time_to_correct_ms").takeIf { !wasNull() }
+        getInt("attempt_count"), getInt("incorrect_attempts"), getLong("time_to_correct_ms").takeIf { !wasNull() },
+        kz.oyla.server.model.ActivityType.valueOf(getString("activity_type")),
+        getTimestamp("started_at")?.let { started -> getTimestamp("completed_at")?.let { completed -> completed.toInstant().toEpochMilli() - started.toInstant().toEpochMilli() } }?.coerceAtLeast(0),
+        getInt("stroke_count").takeIf { getString("activity_type") == "WHITEBOARD" },
+        getInt("child_stroke_count").takeIf { getString("activity_type") == "WHITEBOARD" },
+        getInt("specialist_stroke_count").takeIf { getString("activity_type") == "WHITEBOARD" }
     )
 
     private suspend fun <T> database(block: () -> T): T = withContext(Dispatchers.IO) {

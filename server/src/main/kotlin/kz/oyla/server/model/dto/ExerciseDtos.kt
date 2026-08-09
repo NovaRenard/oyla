@@ -2,6 +2,10 @@ package kz.oyla.server.model.dto
 
 import kotlinx.serialization.Serializable
 import kz.oyla.server.model.ExerciseStatus
+import kz.oyla.server.model.ActivityType
+import kz.oyla.server.model.WhiteboardColor
+import kz.oyla.server.model.WhiteboardTool
+import kz.oyla.server.model.WhiteboardBrushSize
 
 @Serializable
 data class ExerciseOptionDto(
@@ -17,17 +21,40 @@ data class ExerciseDto(
     val id: String,
     val instructionText: String,
     val audioAssetKey: String? = null,
-    val options: List<ExerciseOptionDto>,
+    val options: List<ExerciseOptionDto> = emptyList(),
     val title: String? = null,
     val activityType: String = "SINGLE_CHOICE",
-    val audioUrl: String? = null
+    val audioUrl: String? = null,
+    val whiteboardConfig: WhiteboardExerciseConfigDto? = null
 )
 
-@Serializable
-data class SpecialistExerciseDto(
-    val exercise: ExerciseDto,
-    val correctOptionId: String
+@Serializable data class WhiteboardPointDto(val x: Float, val y: Float)
+
+@Serializable data class WhiteboardStrokeDto(
+    val id: String,
+    val sessionExerciseId: String,
+    val actorRole: String,
+    val actorDeviceId: String,
+    val sequenceNumber: Int,
+    val tool: WhiteboardTool,
+    val color: WhiteboardColor? = null,
+    val brushSize: WhiteboardBrushSize,
+    val points: List<WhiteboardPointDto>,
+    val createdAt: String
 )
+
+@Serializable data class WhiteboardStateSnapshotDto(
+    val sessionExerciseId: String,
+    val childDrawingEnabled: Boolean,
+    val boardRevision: Int,
+    val clearRevision: Int,
+    val strokes: List<WhiteboardStrokeDto>
+)
+
+@Serializable data class CompleteWhiteboardExerciseRequest(val sessionExerciseId: String)
+
+@Serializable
+data class SpecialistExerciseDto(val exercise: ExerciseDto, val correctOptionId: String? = null)
 
 @Serializable
 data class ShowExerciseRequest(val exerciseId: String)
@@ -84,20 +111,26 @@ data class ExerciseStateResponse(
     val hasPrevious: Boolean = false,
     val hasNext: Boolean = true,
     val planCompleted: Boolean = false
+    ,val whiteboardState: WhiteboardStateSnapshotDto? = null
 )
 
 @Serializable
 data class ExerciseSummaryItemDto(
     val position: Int,
     val exerciseId: String,
+    val activityType: ActivityType = ActivityType.SINGLE_CHOICE,
     val instructionText: String,
-    val correctOptionLabel: String,
+    val correctOptionLabel: String = "",
     val attemptCount: Int,
     val incorrectAttempts: Int,
     val firstAttemptCorrect: Boolean,
-    val timeToCorrectMs: Long,
+    val timeToCorrectMs: Long = 0,
     val startedAt: String,
-    val completedAt: String
+    val completedAt: String,
+    val durationMs: Long? = null,
+    val strokeCount: Int? = null,
+    val childStrokeCount: Int? = null,
+    val specialistStrokeCount: Int? = null
 )
 
 @Serializable

@@ -1,5 +1,7 @@
 # SaaS foundation
 
+See [WHITEBOARD activity type](whiteboard.md) for the type-aware session extension introduced after the content-library stage.
+
 ## Tenant isolation
 
 `Center` is the tenant boundary. Every new SaaS entity that represents center-owned data has a non-null `center_id`, and every web request first resolves the JWT user, then the JWT `active_center_id`, then reads the current `CenterMembership` from PostgreSQL. The current user status, center status, membership status, and role are checked on every center-scoped request; a JWT claim alone never permanently authorizes membership.

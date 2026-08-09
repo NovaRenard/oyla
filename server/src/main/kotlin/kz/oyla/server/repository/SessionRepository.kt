@@ -45,7 +45,12 @@ data class LessonExerciseHistoryRecord(
     val status: kz.oyla.server.model.ExerciseStatus,
     val attemptCount: Int,
     val incorrectAttempts: Int,
-    val timeToCorrectMs: Long?
+    val timeToCorrectMs: Long?,
+    val activityType: kz.oyla.server.model.ActivityType = kz.oyla.server.model.ActivityType.SINGLE_CHOICE,
+    val durationMs: Long? = null,
+    val strokeCount: Int? = null,
+    val childStrokeCount: Int? = null,
+    val specialistStrokeCount: Int? = null
 )
 
 data class LessonDetailRecord(val lesson: ManagedLessonRecord, val exercises: List<LessonExerciseHistoryRecord>)

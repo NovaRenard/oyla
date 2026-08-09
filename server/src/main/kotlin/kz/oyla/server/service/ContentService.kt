@@ -19,6 +19,7 @@ import kz.oyla.server.model.LessonTemplateSnapshot
 import kz.oyla.server.model.MediaAssetRecord
 import kz.oyla.server.model.MediaType
 import kz.oyla.server.model.MembershipRole
+import kz.oyla.server.model.WhiteboardExerciseConfig
 import kz.oyla.server.model.dto.ContentExerciseDto
 import kz.oyla.server.model.dto.CreateExerciseRequest
 import kz.oyla.server.model.dto.CreateLessonTemplateRequest
@@ -31,6 +32,7 @@ import kz.oyla.server.model.dto.LessonTemplateItemInput
 import kz.oyla.server.model.dto.MediaAssetDto
 import kz.oyla.server.model.dto.UpdateExerciseRequest
 import kz.oyla.server.model.dto.UpdateLessonTemplateRequest
+import kz.oyla.server.model.dto.WhiteboardExerciseConfigDto
 import kz.oyla.server.repository.ContentExerciseFilter
 import kz.oyla.server.repository.ContentRepository
 import kz.oyla.server.repository.LessonTemplateFilter
@@ -69,9 +71,10 @@ class ContentService(
         val instruction = request.instructionText?.required("Инструкция", 1000) ?: current.instructionText
         val audio = request.instructionAudioAssetId?.uuidOrNull("Аудио") ?: current.instructionAudioAssetId
         validateMedia(context.center.id, audio, MediaType.AUDIO)
-        val options = request.options?.let { options(context.center.id, id, it) } ?: current.options
-        validateSingleChoice(options)
-        val updated = current.copy(title = title, instructionText = instruction, instructionAudioAssetId = audio, options = options, updatedAt = clock.instant())
+        val options = if (current.activityType == ActivityType.SINGLE_CHOICE) request.options?.let { options(context.center.id, id, it) } ?: current.options else emptyList()
+        val whiteboard = if (current.activityType == ActivityType.WHITEBOARD) request.whiteboardConfig?.let { whiteboardConfig(context.center.id, it) } ?: current.whiteboardConfig else null
+        validateDefinition(current.activityType, options, whiteboard)
+        val updated = current.copy(title = title, instructionText = instruction, instructionAudioAssetId = audio, options = options, whiteboardConfig = whiteboard, updatedAt = clock.instant())
         if (!repository.updateExercise(updated)) throw ApiException.notFound("Упражнение не найдено")
         audit(context, "EXERCISE_UPDATED", "EXERCISE", id, ipAddress)
         return updated.toDto(repository.templateUsageCount(id))
@@ -182,10 +185,11 @@ class ContentService(
     }
 
     private suspend fun newExercise(centerId:UUID,request:CreateExerciseRequest,now:java.time.Instant):ContentExerciseRecord {
-        if(request.activityType != ActivityType.SINGLE_CHOICE) throw ApiException.validation("Неподдерживаемый тип упражнения")
         val id=UUID.randomUUID();val audio=request.instructionAudioAssetId?.uuidOrNull("Аудио");validateMedia(centerId,audio,MediaType.AUDIO)
-        val options=options(centerId,id,request.options);validateSingleChoice(options)
-        return ContentExerciseRecord(id,centerId,ContentOwnership.CENTER,request.activityType,request.title.required("Название",160),request.instructionText.required("Инструкция",1000),audio,null,ContentStatus.ACTIVE,now,now,options)
+        val options=if (request.activityType == ActivityType.SINGLE_CHOICE) options(centerId,id,request.options) else emptyList()
+        val whiteboard=if (request.activityType == ActivityType.WHITEBOARD) request.whiteboardConfig?.let { whiteboardConfig(centerId,it) } else null
+        validateDefinition(request.activityType, options, whiteboard)
+        return ContentExerciseRecord(id,centerId,ContentOwnership.CENTER,request.activityType,request.title.required("Название",160),request.instructionText.required("Инструкция",1000),audio,null,ContentStatus.ACTIVE,now,now,options,whiteboard)
     }
     private suspend fun options(centerId:UUID,exerciseId:UUID,values:List<ExerciseOptionInput>):List<ContentExerciseOptionRecord> {
         if(values.mapNotNull{it.id}.let{it.size != it.toSet().size}) throw ApiException.validation("Варианты не должны повторяться")
@@ -194,12 +198,25 @@ class ContentService(
             add(ContentExerciseOptionRecord(value.id?.uuidOrNull("Вариант") ?: UUID.randomUUID(),exerciseId,value.label?.optional(160),image,null,index+1,value.isCorrect))
         } }
     }
-    private fun validateSingleChoice(options:List<ContentExerciseOptionRecord>) {
-        when(ActivityType.SINGLE_CHOICE) { ActivityType.SINGLE_CHOICE -> {
-            if(options.size !in 2..6) throw ApiException.validation("SINGLE_CHOICE требует от 2 до 6 вариантов")
-            if(options.count{it.isCorrect} != 1) throw ApiException.validation("Нужен ровно один правильный вариант")
-            if(options.any{it.label.isNullOrBlank() && it.imageAssetId==null && it.localImageAssetKey==null}) throw ApiException.validation("У варианта нужны название или изображение")
-        } }
+    private fun validateDefinition(type: ActivityType, options:List<ContentExerciseOptionRecord>, whiteboard: WhiteboardExerciseConfig?) {
+        when(type) {
+            ActivityType.SINGLE_CHOICE -> {
+                if(options.size !in 2..6) throw ApiException.validation("SINGLE_CHOICE требует от 2 до 6 вариантов")
+                if(options.count{it.isCorrect} != 1) throw ApiException.validation("Нужен ровно один правильный вариант")
+                if(options.any{it.label.isNullOrBlank() && it.imageAssetId==null && it.localImageAssetKey==null}) throw ApiException.validation("У варианта нужны название или изображение")
+            }
+            ActivityType.WHITEBOARD -> {
+                val config = whiteboard ?: throw ApiException.validation("Для WHITEBOARD нужны настройки доски")
+                if (config.availableColors.size !in 4..6 || config.availableColors.distinct().size != config.availableColors.size) throw ApiException.validation("Палитра доски должна содержать от 4 до 6 разных цветов")
+                if (config.defaultColor !in config.availableColors) throw ApiException.validation("Основной цвет должен быть в палитре")
+                if (options.isNotEmpty()) throw ApiException.validation("WHITEBOARD не использует варианты ответа")
+            }
+        }
+    }
+    private suspend fun whiteboardConfig(centerId: UUID, input: WhiteboardExerciseConfigDto): WhiteboardExerciseConfig {
+        val background = input.backgroundAssetId?.uuidOrNull("Фон")
+        validateMedia(centerId, background, MediaType.IMAGE)
+        return WhiteboardExerciseConfig(background?.toString(), null, input.childDrawingInitiallyEnabled, input.availableColors, input.defaultColor, input.defaultBrushSize, input.allowEraser, input.allowClear)
     }
     private suspend fun templateItems(centerId:UUID,templateId:UUID,values:List<LessonTemplateItemInput>):List<LessonTemplateItemRecord> =
         validateTemplateExerciseIds(centerId,values).mapIndexed { index,id -> LessonTemplateItemRecord(UUID.randomUUID(),templateId,id,index+1) }
@@ -217,7 +234,7 @@ class ContentService(
     private suspend fun audit(context:CenterContext,action:String,entity:String,id:UUID,ip:String?) { tenants.recordAudit(AuditLogRecord(UUID.randomUUID(),context.center.id,AuditActorType.USER,context.user.id,action,entity,id,"{}",ip,clock.instant())) }
 
     private fun ContentExerciseRecord.toDto(usage:Int)=ContentExerciseDto(id.toString(),ownership,activityType,title,instructionText,instructionAudioAssetId?.toString(),instructionAudioAssetId?.url(),localAudioAssetKey,status,
-        options.sortedBy{it.sortOrder}.map { option -> ExerciseOptionContentDto(option.id.toString(),option.label,option.imageAssetId?.toString(),option.imageAssetId?.url(),option.localImageAssetKey,option.sortOrder,option.isCorrect) },usage,createdAt.toString(),updatedAt.toString())
+        options.sortedBy{it.sortOrder}.map { option -> ExerciseOptionContentDto(option.id.toString(),option.label,option.imageAssetId?.toString(),option.imageAssetId?.url(),option.localImageAssetKey,option.sortOrder,option.isCorrect) },whiteboardConfig?.toDto(),usage,createdAt.toString(),updatedAt.toString())
     private suspend fun LessonTemplateRecord.toDto(centerId:UUID):LessonTemplateDto {
         val itemDtos = buildList { for (item in items.sortedBy { it.position }) {
             val exercise=repository.findExerciseAccessible(centerId,item.exerciseId)
@@ -227,7 +244,8 @@ class ContentService(
     }
     private fun MediaAssetRecord.toDto()=MediaAssetDto(id.toString(),ownership,type,originalFilename,mimeType,sizeBytes,id.url(),createdAt.toString())
     private fun ContentExerciseRecord.toSnapshot()=ExerciseSnapshot(id.toString(),activityType,title,instructionText,instructionAudioAssetId?.toString(),instructionAudioAssetId?.url(),localAudioAssetKey,
-        options.sortedBy{it.sortOrder}.map { ExerciseSnapshotOption(it.id.toString(),it.label,it.imageAssetId?.toString(),it.imageAssetId?.url(),it.localImageAssetKey,it.sortOrder) },options.single{it.isCorrect}.id.toString())
+        options.sortedBy{it.sortOrder}.map { ExerciseSnapshotOption(it.id.toString(),it.label,it.imageAssetId?.toString(),it.imageAssetId?.url(),it.localImageAssetKey,it.sortOrder) },options.singleOrNull{it.isCorrect}?.id?.toString(),whiteboardConfig?.copy(backgroundUrl = whiteboardConfig.backgroundAssetId?.let { "/api/v1/media/$it" }))
+    private fun WhiteboardExerciseConfig.toDto() = WhiteboardExerciseConfigDto(backgroundAssetId, backgroundAssetId?.let { "/api/v1/media/$it" }, childDrawingInitiallyEnabled, availableColors, defaultColor, defaultBrushSize, allowEraser, allowClear)
     private fun UUID.url()="/api/v1/media/$this"
     private fun String.required(label:String,max:Int):String=trim().takeIf{it.isNotEmpty() && it.length<=max} ?: throw ApiException.validation("$label обязательно и не длиннее $max символов")
     private fun String.optional(max:Int):String?=trim().takeIf{it.isNotEmpty()}?.takeIf{it.length<=max} ?: if(trim().isEmpty()) null else throw ApiException.validation("Поле не длиннее $max символов")

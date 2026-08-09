@@ -3,6 +3,7 @@ package kz.oyla.server.model.dto
 import kotlinx.serialization.Serializable
 import kz.oyla.server.model.ExerciseStatus
 import kz.oyla.server.model.SessionStatus
+import kz.oyla.server.model.ActivityType
 
 @Serializable data class CreateDeviceLessonRequest(
     val specialistId: String,
@@ -57,7 +58,12 @@ import kz.oyla.server.model.SessionStatus
     val status: ExerciseStatus,
     val attemptCount: Int,
     val incorrectAttempts: Int,
-    val timeToCorrectMs: Long? = null
+    val timeToCorrectMs: Long? = null,
+    val activityType: ActivityType = ActivityType.SINGLE_CHOICE,
+    val durationMs: Long? = null,
+    val strokeCount: Int? = null,
+    val childStrokeCount: Int? = null,
+    val specialistStrokeCount: Int? = null
 )
 
 @Serializable data class LessonDetailsDto(

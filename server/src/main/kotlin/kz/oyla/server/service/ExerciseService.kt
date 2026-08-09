@@ -3,10 +3,9 @@ package kz.oyla.server.service
 import java.time.Clock
 import java.time.Duration
 import java.util.UUID
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kz.oyla.server.model.DeviceRole
 import kz.oyla.server.model.ExerciseStatus
+import kz.oyla.server.model.ActivityType
 import kz.oyla.server.model.SessionStatus
 import kz.oyla.server.model.dto.AnswerExerciseRequest
 import kz.oyla.server.model.dto.AnswerExerciseResponse
@@ -21,6 +20,7 @@ import kz.oyla.server.model.dto.ShowExerciseResponse
 import kz.oyla.server.model.dto.SpecialistExerciseDto
 import kz.oyla.server.model.dto.StartExerciseRequest
 import kz.oyla.server.model.dto.StartExerciseResponse
+import kz.oyla.server.model.dto.WhiteboardExerciseConfigDto
 import kz.oyla.server.repository.ExerciseAttemptRecord
 import kz.oyla.server.repository.ExerciseRecord
 import kz.oyla.server.repository.ExerciseRepository
@@ -28,7 +28,9 @@ import kz.oyla.server.repository.SessionExerciseRecord
 
 class ExerciseService(
     private val exercises: ExerciseRepository,
-    private val clock: Clock = Clock.systemUTC()
+    private val clock: Clock = Clock.systemUTC(),
+    private val whiteboards: WhiteboardService? = null,
+    private val locks: SessionLockRegistry = SessionLockRegistry()
 ) {
     companion object {
         val defaultPlan = listOf(
@@ -36,11 +38,8 @@ class ExerciseService(
         )
     }
 
-    private val sessionMutexes = mutableMapOf<UUID, Mutex>()
-    private fun mutexFor(id: UUID): Mutex = synchronized(sessionMutexes) { sessionMutexes.getOrPut(id) { Mutex() } }
-
     /** Creates missing plan positions only; legacy position 1 and its attempts stay untouched. */
-    suspend fun ensureDefaultExercisePlan(sessionId: UUID) = mutexFor(sessionId).withLock {
+    suspend fun ensureDefaultExercisePlan(sessionId: UUID) = locks.withLock(sessionId) {
         ensureDefaultExercisePlanLocked(sessionId)
     }
 
@@ -76,7 +75,7 @@ class ExerciseService(
         if (authorized.session.status != SessionStatus.READY || authorized.session.childDeviceId == null) {
             throw ApiException.conflict("Нельзя показать задание: ребёнок не подключён")
         }
-        return mutexFor(authorized.session.id).withLock {
+        return locks.withLock(authorized.session.id) {
             ensurePlanLocked(authorized)
             val record = currentLocked(authorized.session.id)
             if (request.exerciseId != record.exerciseId) throw ApiException.conflict("Можно показать только текущее задание")
@@ -94,7 +93,7 @@ class ExerciseService(
     suspend fun start(authorized: AuthorizedSession, request: StartExerciseRequest): StartExerciseResponse {
         requireSpecialist(authorized)
         val recordId = request.sessionExerciseId.toUuid()
-        return mutexFor(authorized.session.id).withLock {
+        return locks.withLock(authorized.session.id) {
             ensurePlanLocked(authorized)
             val record = currentLocked(authorized.session.id).takeIf { it.id == recordId }
                 ?: throw ApiException.notFound("Упражнение занятия не найдено")
@@ -111,6 +110,7 @@ class ExerciseService(
             val started = clock.instant()
             val updated = record.copy(status = ExerciseStatus.RUNNING, startedAt = started)
             exercises.updateSessionExercise(updated)
+            if (updated.activityType() == ActivityType.WHITEBOARD) checkNotNull(whiteboards) { "Whiteboard service is required" }.initialize(updated)
             StartExerciseResponse(updated.id.toString(), updated.status, started.toString())
         }
     }
@@ -119,10 +119,11 @@ class ExerciseService(
         if (authorized.role != DeviceRole.CHILD) throw ApiException.forbidden()
         val sessionExerciseId = request.sessionExerciseId.toUuid()
         val eventId = request.clientEventId.toUuid()
-        return mutexFor(authorized.session.id).withLock {
+        return locks.withLock(authorized.session.id) {
             ensurePlanLocked(authorized)
             val record = currentLocked(authorized.session.id).takeIf { it.id == sessionExerciseId }
                 ?: throw ApiException.notFound("Упражнение занятия не найдено")
+            if (record.activityType() != ActivityType.SINGLE_CHOICE) throw ApiException.conflict("Это упражнение завершается специалистом")
             exercises.findAttemptByClientEventId(eventId)?.let { duplicate ->
                 if (duplicate.sessionExerciseId != sessionExerciseId || duplicate.selectedOptionId != request.selectedOptionId) {
                     throw ApiException.badRequest("Некорректный повтор ответа")
@@ -157,7 +158,7 @@ class ExerciseService(
     suspend fun next(authorized: AuthorizedSession, request: NextExerciseRequest): ExerciseStateResponse {
         requireSpecialist(authorized)
         val currentId = request.currentSessionExerciseId.toUuid()
-        return mutexFor(authorized.session.id).withLock {
+        return locks.withLock(authorized.session.id) {
             ensurePlanLocked(authorized)
             val current = currentLocked(authorized.session.id)
             if (current.id != currentId) throw ApiException.conflict("Текущее задание уже изменилось")
@@ -169,6 +170,22 @@ class ExerciseService(
             if (!exercises.setCurrentExercise(authorized.session.id, next.id)) {
                 throw ApiException.conflict("Не удалось переключить задание")
             }
+            stateForLocked(authorized)
+        }
+    }
+
+    /** WHITEBOARD has no correctness model: only the specialist may complete it explicitly. */
+    suspend fun completeWhiteboard(authorized: AuthorizedSession, sessionExerciseId: String): ExerciseStateResponse {
+        requireSpecialist(authorized)
+        val id = sessionExerciseId.toUuid()
+        return locks.withLock(authorized.session.id) {
+            ensurePlanLocked(authorized)
+            val record = currentLocked(authorized.session.id).takeIf { it.id == id }
+                ?: throw ApiException.notFound("Упражнение занятия не найдено")
+            if (record.activityType() != ActivityType.WHITEBOARD) throw ApiException.conflict("Текущее упражнение не является доской")
+            if (record.status != ExerciseStatus.RUNNING) throw ApiException.conflict("Доска ещё не запущена или уже завершена")
+            exercises.updateSessionExercise(record.copy(status = ExerciseStatus.COMPLETED, completedAt = clock.instant()))
+            whiteboards?.discardActiveStrokes(record.id)
             stateForLocked(authorized)
         }
     }
@@ -188,11 +205,12 @@ class ExerciseService(
         return ExerciseStateResponse(
             sessionExerciseId = record.id.toString(), exerciseStatus = record.status,
             exercise = dtoFor(record, definition).takeIf { authorized.role == DeviceRole.SPECIALIST || childCanSeeExercise },
-            correctOptionId = definition.correctOptionId.takeIf { authorized.role == DeviceRole.SPECIALIST },
+            correctOptionId = definition.correctOptionId.takeIf { authorized.role == DeviceRole.SPECIALIST && record.activityType() == ActivityType.SINGLE_CHOICE },
             latestAnswer = latest?.toResponse(record.status, labelFor(record, latest.selectedOptionId)),
             attemptCount = exercises.countAttempts(record.id), startedAt = record.startedAt?.toString(),
             currentPosition = record.position, totalExercises = total, hasPrevious = record.position > 1,
-            hasNext = record.position < total, planCompleted = planCompleted
+            hasNext = record.position < total, planCompleted = planCompleted,
+            whiteboardState = if (record.activityType() == ActivityType.WHITEBOARD) whiteboards?.snapshotFor(record) else null
         )
     }
 
@@ -200,7 +218,7 @@ class ExerciseService(
         requireSpecialist(authorized)
         val state = stateFor(authorized)
         return SpecialistExerciseDto(
-            exercise = checkNotNull(state.exercise), correctOptionId = checkNotNull(state.correctOptionId)
+            exercise = checkNotNull(state.exercise), correctOptionId = state.correctOptionId
         )
     }
 
@@ -211,19 +229,30 @@ class ExerciseService(
         if (plan.isEmpty() || plan.any { it.status != ExerciseStatus.COMPLETED }) {
             throw ApiException.planNotCompleted()
         }
-        val items = plan.sortedBy { it.position }.map { record ->
+        val items = buildList { for (record in plan.sortedBy { it.position }) {
             val definition = definitionFor(record)
             val attempts = exercises.findAttempts(record.id)
-            val correct = attempts.firstOrNull { it.isCorrect } ?: throw ApiException.planNotCompleted()
-            ExerciseSummaryItemDto(
-                position = record.position, exerciseId = record.exerciseId, instructionText = definition.instructionText,
-                correctOptionLabel = definition.options.first { it.id == definition.correctOptionId }.label,
-                attemptCount = attempts.size, incorrectAttempts = attempts.count { !it.isCorrect },
-                firstAttemptCorrect = attempts.firstOrNull()?.isCorrect == true,
-                timeToCorrectMs = correct.responseTimeMs,
-                startedAt = checkNotNull(record.startedAt).toString(), completedAt = checkNotNull(record.completedAt).toString()
-            )
-        }
+            val startedAt = checkNotNull(record.startedAt); val completedAt = checkNotNull(record.completedAt)
+            if (record.activityType() == ActivityType.WHITEBOARD) {
+                val metrics = whiteboards?.metrics(record.id)
+                add(ExerciseSummaryItemDto(
+                    position = record.position, exerciseId = record.exerciseId, activityType = ActivityType.WHITEBOARD,
+                    instructionText = definition.instructionText, attemptCount = 0, incorrectAttempts = 0,
+                    firstAttemptCorrect = false, startedAt = startedAt.toString(), completedAt = completedAt.toString(),
+                    durationMs = Duration.between(startedAt, completedAt).toMillis().coerceAtLeast(0),
+                    strokeCount = metrics?.total ?: 0, childStrokeCount = metrics?.child ?: 0, specialistStrokeCount = metrics?.specialist ?: 0
+                ))
+            } else {
+                val correct = attempts.firstOrNull { it.isCorrect } ?: throw ApiException.planNotCompleted()
+                add(ExerciseSummaryItemDto(
+                    position = record.position, exerciseId = record.exerciseId, activityType = ActivityType.SINGLE_CHOICE, instructionText = definition.instructionText,
+                    correctOptionLabel = definition.options.first { it.id == definition.correctOptionId }.label,
+                    attemptCount = attempts.size, incorrectAttempts = attempts.count { !it.isCorrect },
+                    firstAttemptCorrect = attempts.firstOrNull()?.isCorrect == true, timeToCorrectMs = correct.responseTimeMs,
+                    startedAt = startedAt.toString(), completedAt = completedAt.toString(), durationMs = Duration.between(startedAt, completedAt).toMillis().coerceAtLeast(0)
+                ))
+            }
+        } }
         val totalAttempts = items.sumOf { it.attemptCount }
         val firstCorrect = items.count { it.firstAttemptCorrect }
         val started = items.minOf { java.time.Instant.parse(it.startedAt) }
@@ -242,14 +271,14 @@ class ExerciseService(
         exercises.findCurrentSessionExercise(sessionId) ?: throw ApiException.conflict("Текущее задание не найдено")
 
     private suspend fun definitionFor(record: SessionExerciseRecord): ExerciseRecord = record.snapshot?.let { snapshot ->
-        ExerciseRecord(snapshot.sourceExerciseId, snapshot.instructionText, snapshot.localAudioAssetKey, snapshot.correctOptionId, true, clock.instant(),
+        ExerciseRecord(snapshot.sourceExerciseId, snapshot.instructionText, snapshot.localAudioAssetKey, snapshot.correctOptionId.orEmpty(), true, clock.instant(),
             snapshot.options.map { option -> kz.oyla.server.repository.ExerciseOptionRecord(option.id, snapshot.sourceExerciseId, option.label.orEmpty(), option.localImageAssetKey.orEmpty(), option.position) })
     } ?: exercises.findExercise(record.exerciseId) ?: throw ApiException.notFound("Упражнение не найдено")
 
     private suspend fun dtoFor(record: SessionExerciseRecord, definition: ExerciseRecord): ExerciseDto = record.snapshot?.let { snapshot ->
         ExerciseDto(snapshot.sourceExerciseId, snapshot.instructionText, snapshot.localAudioAssetKey,
             snapshot.options.sortedBy { it.position }.map { option -> ExerciseOptionDto(option.id, option.label.orEmpty(), option.localImageAssetKey.orEmpty(), option.position, option.imageUrl) },
-            snapshot.title, snapshot.activityType.name, snapshot.audioUrl)
+            snapshot.title, snapshot.activityType.name, snapshot.audioUrl, snapshot.whiteboardConfig?.toDto())
     } ?: definition.toDto()
 
     private suspend fun labelFor(record: SessionExerciseRecord, optionId: String): String = definitionFor(record).options.firstOrNull { it.id == optionId }?.label ?: optionId
@@ -266,4 +295,6 @@ class ExerciseService(
     private fun ExerciseAttemptRecord.toResponse(status: ExerciseStatus, label: String = selectedOptionId) = AnswerExerciseResponse(
         sessionExerciseId.toString(), selectedOptionId, label, isCorrect, attemptNumber, responseTimeMs, status
     )
+    private fun SessionExerciseRecord.activityType() = snapshot?.activityType ?: ActivityType.SINGLE_CHOICE
+    private fun kz.oyla.server.model.WhiteboardExerciseConfig.toDto() = WhiteboardExerciseConfigDto(backgroundAssetId, backgroundUrl, childDrawingInitiallyEnabled, availableColors, defaultColor, defaultBrushSize, allowEraser, allowClear)
 }

@@ -12,11 +12,17 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import kz.oyla.server.model.DeviceRole
 import kz.oyla.server.model.DeviceStatus
+import kz.oyla.server.model.WhiteboardBrushSize
+import kz.oyla.server.model.WhiteboardColor
+import kz.oyla.server.model.WhiteboardTool
 import kz.oyla.server.model.dto.ActivateDeviceRequest
 import kz.oyla.server.model.dto.CreateActivationCodeRequest
 import kz.oyla.server.model.dto.RegisterCenterRequest
 import kz.oyla.server.model.dto.UpdateDeviceRequest
+import kz.oyla.server.model.dto.WhiteboardPointDto
 import kz.oyla.server.repository.DatabaseSaasRepository
+import kz.oyla.server.repository.DatabaseWhiteboardRepository
+import kz.oyla.server.repository.WhiteboardStrokeInput
 import kz.oyla.server.service.ApiException
 import kz.oyla.server.service.SaasConfig
 import kz.oyla.server.service.SaasService
@@ -138,6 +144,29 @@ class PostgresSaasIntegrationTest {
         assertEquals("2.0", queryText("SELECT app_version FROM devices WHERE id = '${device.deviceId}'"))
     }
 
+    @Test fun `WHITEBOARD state and completed strokes survive PostgreSQL revisions`() = runBlocking {
+        val sessionId = UUID.randomUUID(); val exerciseId = UUID.randomUUID(); seedWhiteboardSession(sessionId, exerciseId)
+        val boards = DatabaseWhiteboardRepository(); val now = Instant.parse("2026-08-09T00:00:00Z")
+        boards.ensureState(exerciseId, childDrawingEnabled = true, now)
+        coroutineScope {
+            listOf(
+                async { boards.completeStroke(stroke(exerciseId, DeviceRole.SPECIALIST, "specialist", now)) },
+                async { boards.completeStroke(stroke(exerciseId, DeviceRole.CHILD, "child", now.plusSeconds(1))) }
+            ).awaitAll()
+        }
+        val afterStrokes = boards.snapshot(exerciseId)!!
+        assertEquals(listOf(1, 2), afterStrokes.strokes.map { it.sequenceNumber })
+        assertEquals(2, afterStrokes.strokes.size)
+
+        boards.undoLatest(exerciseId, DeviceRole.SPECIALIST, now.plusSeconds(2))
+        boards.clear(exerciseId, now.plusSeconds(3))
+        val afterClear = boards.snapshot(exerciseId)!!
+
+        assertTrue(afterClear.strokes.isEmpty())
+        assertEquals(1, afterClear.state.clearRevision)
+        assertEquals(2, queryInt("SELECT COUNT(*) FROM whiteboard_strokes WHERE session_exercise_id = '$exerciseId'"))
+    }
+
     private suspend fun register(name: String, email: String) = service.registerCenter(RegisterCenterRequest(name, "Owner", null, email, "Password123"), null)
     private fun kz.oyla.server.model.dto.AuthResponse.centerId(): String = checkNotNull(activeCenter).id
     private suspend fun codeFor(owner: kz.oyla.server.model.dto.AuthResponse, name: String) = service.createActivationCode(
@@ -152,6 +181,25 @@ class PostgresSaasIntegrationTest {
         connection.createStatement().use { statement -> statement.executeQuery(sql).use { result -> if (result.next()) result.getString(1) else null } }
     }
     private fun queryInt(sql: String): Int = queryText(sql)!!.toInt()
+    private fun seedWhiteboardSession(sessionId: UUID, exerciseId: UUID) {
+        postgres.createConnection("").use { connection ->
+            connection.prepareStatement("""INSERT INTO sessions
+                (id, connection_code, child_name, status, specialist_device_id, specialist_token, child_device_id, child_token, created_at, expires_at, connected_at)
+                VALUES (?, '1234', 'Child', 'READY', 'specialist-device', 'specialist-token', 'child-device', 'child-token', NOW(), NOW() + INTERVAL '1 hour', NOW())""").use { statement ->
+                statement.setObject(1, sessionId); statement.executeUpdate()
+            }
+            connection.prepareStatement("""INSERT INTO session_exercises
+                (id, session_id, exercise_id, status, created_at, position, is_current, activity_type)
+                VALUES (?, ?, 'whiteboard-test', 'RUNNING', NOW(), 1, TRUE, 'WHITEBOARD')""").use { statement ->
+                statement.setObject(1, exerciseId); statement.setObject(2, sessionId); statement.executeUpdate()
+            }
+        }
+    }
+    private fun stroke(exerciseId: UUID, role: DeviceRole, deviceId: String, now: Instant) = WhiteboardStrokeInput(
+        id = UUID.randomUUID(), sessionExerciseId = exerciseId, actorRole = role, actorDeviceId = deviceId,
+        tool = WhiteboardTool.PEN, color = WhiteboardColor.BLUE, brushSize = WhiteboardBrushSize.MEDIUM,
+        points = listOf(WhiteboardPointDto(.1f, .1f), WhiteboardPointDto(.2f, .2f)), clientEventId = UUID.randomUUID(), createdAt = now
+    )
 
     private class MutableClock(private var instant: Instant) : Clock() {
         override fun instant(): Instant = instant

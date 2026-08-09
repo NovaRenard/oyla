@@ -69,7 +69,8 @@ data class StateSnapshotEvent(
     val totalExercises: Int = 0,
     val hasPrevious: Boolean = false,
     val hasNext: Boolean = true,
-    val planCompleted: Boolean = false
+    val planCompleted: Boolean = false,
+    val whiteboardState: WhiteboardStateSnapshotDto? = null
 )
 
 @Serializable
@@ -112,7 +113,8 @@ data class ExerciseStartedEvent(
     val exerciseStatus: ExerciseStatus,
     val startedAt: String,
     val currentPosition: Int = 1,
-    val totalExercises: Int = 0
+    val totalExercises: Int = 0,
+    val whiteboardState: WhiteboardStateSnapshotDto? = null
 )
 
 @Serializable
@@ -152,7 +154,8 @@ data class ExerciseChangedEvent(
     val attemptCount: Int = 0,
     val latestAnswer: AnswerExerciseResponse? = null,
     val startedAt: String? = null,
-    val planCompleted: Boolean = false
+    val planCompleted: Boolean = false,
+    val whiteboardState: WhiteboardStateSnapshotDto? = null
 )
 
 @Serializable
@@ -162,4 +165,62 @@ data class ExercisePlanCompletedEvent(
     val currentPosition: Int,
     val totalExercises: Int,
     val planCompleted: Boolean = true
+)
+
+@Serializable data class WhiteboardStrokeStartedEvent(
+    val type: String = "WHITEBOARD_STROKE_STARTED",
+    val sessionId: String,
+    val sessionExerciseId: String,
+    val strokeId: String,
+    val actorRole: String,
+    val tool: String,
+    val color: String? = null,
+    val brushSize: String
+)
+@Serializable data class WhiteboardStrokePointsEvent(
+    val type: String = "WHITEBOARD_STROKE_POINTS",
+    val sessionId: String,
+    val sessionExerciseId: String,
+    val strokeId: String,
+    val points: List<WhiteboardPointDto>
+)
+@Serializable data class WhiteboardStrokeCompletedEvent(
+    val type: String = "WHITEBOARD_STROKE_COMPLETED",
+    val sessionId: String,
+    val sessionExerciseId: String,
+    val stroke: WhiteboardStrokeDto
+)
+@Serializable data class WhiteboardClearEvent(
+    val type: String = "WHITEBOARD_CLEARED",
+    val sessionId: String,
+    val sessionExerciseId: String,
+    val clearRevision: Int,
+    val boardRevision: Int
+)
+
+/** One envelope keeps the existing session WebSocket backwards compatible for old clients. */
+@Serializable data class WhiteboardClientEvent(
+    val type: String,
+    val sessionExerciseId: String? = null,
+    val strokeId: String? = null,
+    val tool: kz.oyla.server.model.WhiteboardTool? = null,
+    val color: kz.oyla.server.model.WhiteboardColor? = null,
+    val brushSize: kz.oyla.server.model.WhiteboardBrushSize? = null,
+    val points: List<WhiteboardPointDto> = emptyList(),
+    val clientEventId: String? = null,
+    val childDrawingEnabled: Boolean? = null
+)
+@Serializable data class WhiteboardUndoEvent(
+    val type: String = "WHITEBOARD_UNDONE",
+    val sessionId: String,
+    val sessionExerciseId: String,
+    val strokeId: String,
+    val boardRevision: Int
+)
+@Serializable data class WhiteboardChildPermissionChangedEvent(
+    val type: String = "WHITEBOARD_CHILD_PERMISSION_CHANGED",
+    val sessionId: String,
+    val sessionExerciseId: String,
+    val childDrawingEnabled: Boolean,
+    val boardRevision: Int
 )

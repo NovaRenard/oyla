@@ -6,6 +6,9 @@ import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import kz.oyla.server.model.ActivityType
 import kz.oyla.server.model.ContentExerciseOptionRecord
 import kz.oyla.server.model.ContentExerciseRecord
@@ -15,6 +18,9 @@ import kz.oyla.server.model.LessonTemplateItemRecord
 import kz.oyla.server.model.LessonTemplateRecord
 import kz.oyla.server.model.MediaAssetRecord
 import kz.oyla.server.model.MediaType
+import kz.oyla.server.model.WhiteboardBrushSize
+import kz.oyla.server.model.WhiteboardColor
+import kz.oyla.server.model.WhiteboardExerciseConfig
 import org.jetbrains.exposed.sql.statements.jdbc.JdbcConnectionImpl
 import org.jetbrains.exposed.sql.transactions.TransactionManager
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -31,17 +37,20 @@ class DatabaseContentRepository : ContentRepository {
             var i = 1; statement.setObject(i++, centerId)
             filter.ownership?.let { statement.setString(i++, it.name) }; filter.status?.let { statement.setString(i++, it.name) }
             filter.activityType?.let { statement.setString(i++, it.name) }; filter.search?.takeIf { it.isNotBlank() }?.let { value -> statement.setString(i++, "%$value%"); statement.setString(i++, "%$value%") }
-            statement.executeQuery().use { rows -> buildList { while (rows.next()) add(rows.toExercise(connection.options(rows.getObject("id", UUID::class.java)))) } }
+            statement.executeQuery().use { rows -> buildList { while (rows.next()) {
+                val id = rows.getObject("id", UUID::class.java)
+                add(rows.toExercise(connection.options(id), connection.whiteboardConfig(id)))
+            } } }
         }
     }
 
     override suspend fun findExercise(id: UUID): ContentExerciseRecord? = database {
-        connection.prepareStatement("SELECT * FROM content_exercises WHERE id = ?").use { it.setObject(1, id); it.executeQuery().use { rows -> if (rows.next()) rows.toExercise(connection.options(id)) else null } }
+        connection.prepareStatement("SELECT * FROM content_exercises WHERE id = ?").use { it.setObject(1, id); it.executeQuery().use { rows -> if (rows.next()) rows.toExercise(connection.options(id), connection.whiteboardConfig(id)) else null } }
     }
 
     override suspend fun findExerciseAccessible(centerId: UUID, id: UUID): ContentExerciseRecord? = database {
         connection.prepareStatement("SELECT * FROM content_exercises WHERE id = ? AND (ownership = 'SYSTEM' OR center_id = ?)").use { statement ->
-            statement.setObject(1, id); statement.setObject(2, centerId); statement.executeQuery().use { rows -> if (rows.next()) rows.toExercise(connection.options(id)) else null }
+            statement.setObject(1, id); statement.setObject(2, centerId); statement.executeQuery().use { rows -> if (rows.next()) rows.toExercise(connection.options(id), connection.whiteboardConfig(id)) else null }
         }
     }
 
@@ -53,7 +62,7 @@ class DatabaseContentRepository : ContentRepository {
             statement.setString(5, record.activityType.name); statement.setString(6, record.title); statement.setString(7, record.instructionText); statement.setObject(8, record.instructionAudioAssetId)
             statement.setString(9, record.localAudioAssetKey); statement.setString(10, record.status.name); statement.setInstant(11, record.createdAt); statement.setInstant(12, record.updatedAt); statement.executeUpdate()
         }
-        connection.insertOptions(record.options); record
+        connection.insertOptions(record.options); connection.insertWhiteboardConfig(record.id, record.whiteboardConfig); record
     }
 
     override suspend fun updateExercise(record: ContentExerciseRecord): Boolean = database {
@@ -65,6 +74,8 @@ class DatabaseContentRepository : ContentRepository {
         if (!changed) return@database false
         connection.prepareStatement("DELETE FROM content_exercise_options WHERE exercise_id = ?").use { it.setObject(1, record.id); it.executeUpdate() }
         connection.insertOptions(record.options)
+        connection.prepareStatement("DELETE FROM whiteboard_exercise_configs WHERE exercise_id = ?").use { it.setObject(1, record.id); it.executeUpdate() }
+        connection.insertWhiteboardConfig(record.id, record.whiteboardConfig)
         true
     }
 
@@ -124,7 +135,8 @@ class DatabaseContentRepository : ContentRepository {
     }
     override suspend fun mediaUsageCount(id: UUID): Int = database {
         connection.prepareStatement("""SELECT (SELECT COUNT(*) FROM content_exercises WHERE instruction_audio_asset_id=?) +
-            (SELECT COUNT(*) FROM content_exercise_options WHERE image_asset_id=?)""").use { it.setObject(1,id);it.setObject(2,id);it.executeQuery().use { rows -> rows.next();rows.getInt(1) } }
+            (SELECT COUNT(*) FROM content_exercise_options WHERE image_asset_id=?) +
+            (SELECT COUNT(*) FROM whiteboard_exercise_configs WHERE background_asset_id=?)""").use { it.setObject(1,id);it.setObject(2,id);it.setObject(3,id);it.executeQuery().use { rows -> rows.next();rows.getInt(1) } }
     }
 
     private fun Connection.options(exerciseId: UUID): List<ContentExerciseOptionRecord> = prepareStatement("SELECT * FROM content_exercise_options WHERE exercise_id=? ORDER BY sort_order").use { statement ->
@@ -139,6 +151,19 @@ class DatabaseContentRepository : ContentRepository {
             statement.setObject(1,item.id);statement.setObject(2,item.exerciseId);statement.setString(3,item.label);statement.setObject(4,item.imageAssetId);statement.setString(5,item.localImageAssetKey);statement.setInt(6,item.sortOrder);statement.setBoolean(7,item.isCorrect);statement.addBatch()
         }; statement.executeBatch() }
     }
+    private fun Connection.whiteboardConfig(exerciseId: UUID): WhiteboardExerciseConfig? = prepareStatement("SELECT * FROM whiteboard_exercise_configs WHERE exercise_id=?").use { statement ->
+        statement.setObject(1, exerciseId); statement.executeQuery().use { rows -> if (rows.next()) rows.toWhiteboardConfig() else null }
+    }
+    private fun Connection.insertWhiteboardConfig(exerciseId: UUID, config: WhiteboardExerciseConfig?) {
+        if (config == null) return
+        prepareStatement("""INSERT INTO whiteboard_exercise_configs
+            (exercise_id, background_asset_id, child_drawing_initially_enabled, available_colors, default_color, default_brush_size, allow_eraser, allow_clear)
+            VALUES (?, ?, ?, ?::jsonb, ?, ?, ?, ?)""").use { statement ->
+            statement.setObject(1, exerciseId); statement.setObject(2, config.backgroundAssetId?.let(UUID::fromString)); statement.setBoolean(3, config.childDrawingInitiallyEnabled)
+            statement.setString(4, json.encodeToString(config.availableColors)); statement.setString(5, config.defaultColor.name); statement.setString(6, config.defaultBrushSize.name)
+            statement.setBoolean(7, config.allowEraser); statement.setBoolean(8, config.allowClear); statement.executeUpdate()
+        }
+    }
     private fun Connection.insertTemplateItems(templateId: UUID, items: List<UUID>) {
         if(items.isEmpty()) return
         prepareStatement("INSERT INTO lesson_template_items (id,template_id,exercise_id,position) VALUES (?,?,?,?)").use { statement -> items.forEachIndexed { index,item ->
@@ -147,12 +172,21 @@ class DatabaseContentRepository : ContentRepository {
     }
     private fun Connection.findMedia(sql:String, bind: java.sql.PreparedStatement.()->Unit): MediaAssetRecord? = prepareStatement(sql).use { statement -> statement.bind();statement.executeQuery().use { rows -> if(rows.next()) rows.toMedia() else null } }
     private suspend fun count(sql:String,id:UUID): Int = database { connection.prepareStatement(sql).use { it.setObject(1,id);it.executeQuery().use { rows -> rows.next();rows.getInt(1) } } }
-    private fun ResultSet.toExercise(options:List<ContentExerciseOptionRecord>) = ContentExerciseRecord(getObject("id",UUID::class.java),getObject("center_id",UUID::class.java),ContentOwnership.valueOf(getString("ownership")),ActivityType.valueOf(getString("activity_type")),getString("title"),getString("instruction_text"),getObject("instruction_audio_asset_id",UUID::class.java),getString("local_audio_asset_key"),ContentStatus.valueOf(getString("status")),getTimestamp("created_at").toInstant(),getTimestamp("updated_at").toInstant(),options,getString("legacy_key"))
+    private fun ResultSet.toExercise(options:List<ContentExerciseOptionRecord>, whiteboardConfig: WhiteboardExerciseConfig?) = ContentExerciseRecord(getObject("id",UUID::class.java),getObject("center_id",UUID::class.java),ContentOwnership.valueOf(getString("ownership")),ActivityType.valueOf(getString("activity_type")),getString("title"),getString("instruction_text"),getObject("instruction_audio_asset_id",UUID::class.java),getString("local_audio_asset_key"),ContentStatus.valueOf(getString("status")),getTimestamp("created_at").toInstant(),getTimestamp("updated_at").toInstant(),options,whiteboardConfig,getString("legacy_key"))
     private fun ResultSet.toOption() = ContentExerciseOptionRecord(getObject("id",UUID::class.java),getObject("exercise_id",UUID::class.java),getString("label"),getObject("image_asset_id",UUID::class.java),getString("local_image_asset_key"),getInt("sort_order"),getBoolean("is_correct"))
     private fun ResultSet.toTemplate(items:List<LessonTemplateItemRecord>) = LessonTemplateRecord(getObject("id",UUID::class.java),getObject("center_id",UUID::class.java),ContentOwnership.valueOf(getString("ownership")),getString("name"),getString("description"),ContentStatus.valueOf(getString("status")),getTimestamp("created_at").toInstant(),getTimestamp("updated_at").toInstant(),items)
     private fun ResultSet.toTemplateItem() = LessonTemplateItemRecord(getObject("id",UUID::class.java),getObject("template_id",UUID::class.java),getObject("exercise_id",UUID::class.java),getInt("position"))
     private fun ResultSet.toMedia() = MediaAssetRecord(getObject("id",UUID::class.java),getObject("center_id",UUID::class.java),ContentOwnership.valueOf(getString("ownership")),MediaType.valueOf(getString("type")),getString("storage_key"),getString("original_filename"),getString("mime_type"),getLong("size_bytes"),getTimestamp("created_at").toInstant())
+    private fun ResultSet.toWhiteboardConfig() = WhiteboardExerciseConfig(
+        backgroundAssetId = getObject("background_asset_id", UUID::class.java)?.toString(),
+        childDrawingInitiallyEnabled = getBoolean("child_drawing_initially_enabled"),
+        availableColors = json.decodeFromString(getString("available_colors")),
+        defaultColor = WhiteboardColor.valueOf(getString("default_color")),
+        defaultBrushSize = WhiteboardBrushSize.valueOf(getString("default_brush_size")),
+        allowEraser = getBoolean("allow_eraser"), allowClear = getBoolean("allow_clear")
+    )
     private fun java.sql.PreparedStatement.setInstant(index:Int,value:Instant?) { setTimestamp(index,value?.let(java.sql.Timestamp::from)) }
     private val connection: Connection get()=(TransactionManager.current().connection as JdbcConnectionImpl).connection
     private suspend fun <T> database(block:()->T):T=withContext(Dispatchers.IO){ transaction { block() } }
+    private companion object { val json = Json { encodeDefaults = true; explicitNulls = false } }
 }
