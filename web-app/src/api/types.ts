@@ -1,5 +1,6 @@
 export type DeviceRole = "CHILD" | "SPECIALIST";
 export type DeviceStatus = "ACTIVE" | "BLOCKED" | "UNLINKED";
+export type CatalogStatus = "ACTIVE" | "ARCHIVED";
 
 export interface User {
   id: string;
@@ -57,6 +58,26 @@ export interface ActivationCode {
   expiresAt: string;
   deviceName: string;
   deviceRole: DeviceRole;
+}
+
+export interface Child {
+  id: string;
+  firstName: string;
+  lastName?: string;
+  birthDate?: string;
+  status: CatalogStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Specialist {
+  id: string;
+  firstName: string;
+  lastName?: string;
+  specialization?: string;
+  status: CatalogStatus;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ApiErrorBody {

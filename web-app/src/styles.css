@@ -109,6 +109,7 @@ hr { height: 1px; margin: 1.6rem 0; border: 0; background: #e8e5df; }
 .danger-zone { display: grid; align-items: start; justify-items: start; gap: .75rem; }
 .back-link { display: inline-block; margin-bottom: 1.1rem; font-size: .88rem; font-weight: 700; }
 .narrow { max-width: 620px; }
+.empty-inline { border-radius: 10px; background: #f3f5ef; padding: .9rem 1rem; color: #718078; }
 .toast-stack { display: grid; position: fixed; z-index: 20; right: 1rem; bottom: 1rem; gap: .5rem; width: min(360px, calc(100vw - 2rem)); }
 .toast { border-radius: 10px; padding: .85rem 1rem; color: #fff; box-shadow: 0 5px 18px #1c2e2344; }
 .toast.success { background: #397661; }.toast.error { background: #a7544d; }

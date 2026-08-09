@@ -132,6 +132,8 @@ fun Application.module(
 }
 
 private fun io.ktor.server.application.ApplicationCall.isSaasPath(): Boolean = request.path().let {
-    it.startsWith("/api/v1/auth") || it.startsWith("/api/v1/centers") ||
-        it.startsWith("/api/v1/devices") || it.startsWith("/api/v1/device-auth")
+        it.startsWith("/api/v1/auth") || it.startsWith("/api/v1/centers") ||
+        it.startsWith("/api/v1/devices") || it.startsWith("/api/v1/device-auth") ||
+        it.startsWith("/api/v1/children") || it.startsWith("/api/v1/specialists") ||
+        it.startsWith("/api/v1/device-data")
 }

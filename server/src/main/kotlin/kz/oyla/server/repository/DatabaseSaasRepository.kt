@@ -13,6 +13,8 @@ import kz.oyla.server.model.AuditLogRecord
 import kz.oyla.server.model.CenterMembershipRecord
 import kz.oyla.server.model.CenterRecord
 import kz.oyla.server.model.CenterStatus
+import kz.oyla.server.model.ChildRecord
+import kz.oyla.server.model.ChildStatus
 import kz.oyla.server.model.DeviceActivationCodeRecord
 import kz.oyla.server.model.DeviceRecord
 import kz.oyla.server.model.DeviceRole
@@ -23,6 +25,8 @@ import kz.oyla.server.model.RefreshTokenRecord
 import kz.oyla.server.model.UserCenterMembership
 import kz.oyla.server.model.UserRecord
 import kz.oyla.server.model.UserStatus
+import kz.oyla.server.model.SpecialistRecord
+import kz.oyla.server.model.SpecialistStatus
 import org.jetbrains.exposed.sql.statements.jdbc.JdbcConnectionImpl
 import org.jetbrains.exposed.sql.transactions.TransactionManager
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -267,6 +271,84 @@ class DatabaseSaasRepository : SaasRepository {
             model = model ?: current.model, lastSeenAt = now, updatedAt = now)
         if (!updateDeviceInTransaction(updated)) null else updated
     }
+
+    override suspend fun createChild(record: ChildRecord): ChildRecord = database {
+        connection.prepareStatement(
+            """INSERT INTO children (id, center_id, first_name, last_name, birth_date, status, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)"""
+        ).use { statement ->
+            statement.setObject(1, record.id); statement.setObject(2, record.centerId); statement.setString(3, record.firstName)
+            statement.setString(4, record.lastName); statement.setObject(5, record.birthDate); statement.setString(6, record.status.name)
+            statement.setInstant(7, record.createdAt); statement.setInstant(8, record.updatedAt); statement.executeUpdate()
+        }
+        record
+    }
+
+    override suspend fun listChildren(centerId: UUID, filter: ChildListFilter): List<ChildRecord> = database {
+        val clauses = mutableListOf("center_id = ?")
+        if (filter.status != null) clauses += "status = ?"
+        if (!filter.search.isNullOrBlank()) clauses += "(first_name ILIKE ? OR COALESCE(last_name, '') ILIKE ?)"
+        connection.prepareStatement("SELECT * FROM children WHERE ${clauses.joinToString(" AND ")} ORDER BY first_name, last_name NULLS LAST, id").use { statement ->
+            var index = 1; statement.setObject(index++, centerId)
+            filter.status?.let { statement.setString(index++, it.name) }
+            filter.search?.takeIf { it.isNotBlank() }?.let { query -> statement.setString(index++, "%$query%"); statement.setString(index++, "%$query%") }
+            statement.executeQuery().use { result -> buildList { while (result.next()) add(result.toChild()) } }
+        }
+    }
+
+    override suspend fun findChild(centerId: UUID, id: UUID): ChildRecord? = database {
+        connection.findChild("SELECT * FROM children WHERE center_id = ? AND id = ?") { setObject(1, centerId); setObject(2, id) }
+    }
+
+    override suspend fun updateChild(record: ChildRecord): Boolean = database {
+        connection.prepareStatement(
+            """UPDATE children SET first_name = ?, last_name = ?, birth_date = ?, status = ?, updated_at = ?
+               WHERE id = ? AND center_id = ?"""
+        ).use { statement ->
+            statement.setString(1, record.firstName); statement.setString(2, record.lastName); statement.setObject(3, record.birthDate)
+            statement.setString(4, record.status.name); statement.setInstant(5, record.updatedAt); statement.setObject(6, record.id); statement.setObject(7, record.centerId)
+            statement.executeUpdate() == 1
+        }
+    }
+
+    override suspend fun createSpecialist(record: SpecialistRecord): SpecialistRecord = database {
+        connection.prepareStatement(
+            """INSERT INTO specialists (id, center_id, first_name, last_name, specialization, status, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)"""
+        ).use { statement ->
+            statement.setObject(1, record.id); statement.setObject(2, record.centerId); statement.setString(3, record.firstName)
+            statement.setString(4, record.lastName); statement.setString(5, record.specialization); statement.setString(6, record.status.name)
+            statement.setInstant(7, record.createdAt); statement.setInstant(8, record.updatedAt); statement.executeUpdate()
+        }
+        record
+    }
+
+    override suspend fun listSpecialists(centerId: UUID, filter: SpecialistListFilter): List<SpecialistRecord> = database {
+        val clauses = mutableListOf("center_id = ?")
+        if (filter.status != null) clauses += "status = ?"
+        if (!filter.search.isNullOrBlank()) clauses += "(first_name ILIKE ? OR COALESCE(last_name, '') ILIKE ? OR COALESCE(specialization, '') ILIKE ?)"
+        connection.prepareStatement("SELECT * FROM specialists WHERE ${clauses.joinToString(" AND ")} ORDER BY first_name, last_name NULLS LAST, id").use { statement ->
+            var index = 1; statement.setObject(index++, centerId)
+            filter.status?.let { statement.setString(index++, it.name) }
+            filter.search?.takeIf { it.isNotBlank() }?.let { query -> repeat(3) { statement.setString(index++, "%$query%") } }
+            statement.executeQuery().use { result -> buildList { while (result.next()) add(result.toSpecialist()) } }
+        }
+    }
+
+    override suspend fun findSpecialist(centerId: UUID, id: UUID): SpecialistRecord? = database {
+        connection.findSpecialist("SELECT * FROM specialists WHERE center_id = ? AND id = ?") { setObject(1, centerId); setObject(2, id) }
+    }
+
+    override suspend fun updateSpecialist(record: SpecialistRecord): Boolean = database {
+        connection.prepareStatement(
+            """UPDATE specialists SET first_name = ?, last_name = ?, specialization = ?, status = ?, updated_at = ?
+               WHERE id = ? AND center_id = ?"""
+        ).use { statement ->
+            statement.setString(1, record.firstName); statement.setString(2, record.lastName); statement.setString(3, record.specialization)
+            statement.setString(4, record.status.name); statement.setInstant(5, record.updatedAt); statement.setObject(6, record.id); statement.setObject(7, record.centerId)
+            statement.executeUpdate() == 1
+        }
+    }
     override suspend fun recordAudit(record: AuditLogRecord) = database { insertAudit(record) }
 
     private fun insertRefreshToken(token: RefreshTokenRecord) {
@@ -322,6 +404,8 @@ class DatabaseSaasRepository : SaasRepository {
     private fun Connection.findRefreshToken(sql: String, bind: PreparedStatement.() -> Unit): RefreshTokenRecord? = prepareStatement(sql).use { statement -> statement.bind(); statement.executeQuery().use { if (it.next()) it.toRefreshToken() else null } }
     private fun Connection.findActivationCode(sql: String, bind: PreparedStatement.() -> Unit): DeviceActivationCodeRecord? = prepareStatement(sql).use { statement -> statement.bind(); statement.executeQuery().use { if (it.next()) it.toActivationCode() else null } }
     private fun Connection.findDevice(sql: String, bind: PreparedStatement.() -> Unit): DeviceRecord? = prepareStatement(sql).use { statement -> statement.bind(); statement.executeQuery().use { if (it.next()) it.toDevice() else null } }
+    private fun Connection.findChild(sql: String, bind: PreparedStatement.() -> Unit): ChildRecord? = prepareStatement(sql).use { statement -> statement.bind(); statement.executeQuery().use { if (it.next()) it.toChild() else null } }
+    private fun Connection.findSpecialist(sql: String, bind: PreparedStatement.() -> Unit): SpecialistRecord? = prepareStatement(sql).use { statement -> statement.bind(); statement.executeQuery().use { if (it.next()) it.toSpecialist() else null } }
     private fun PreparedStatement.setInstant(index: Int, value: Instant?) = setTimestamp(index, value?.let(java.sql.Timestamp::from))
 
     private fun ResultSet.toCenter() = CenterRecord(getObject("id", UUID::class.java), getString("name"), getString("slug"), CenterStatus.valueOf(getString("status")), getString("timezone"), getTimestamp("created_at").toInstant(), getTimestamp("updated_at").toInstant())
@@ -331,6 +415,8 @@ class DatabaseSaasRepository : SaasRepository {
     private fun ResultSet.toRefreshToken() = RefreshTokenRecord(getObject("id", UUID::class.java), getObject("user_id", UUID::class.java), getString("token_hash"), getTimestamp("expires_at").toInstant(), getTimestamp("created_at").toInstant(), getTimestamp("revoked_at")?.toInstant())
     private fun ResultSet.toActivationCode() = DeviceActivationCodeRecord(getObject("id", UUID::class.java), getObject("center_id", UUID::class.java), getObject("created_by_user_id", UUID::class.java), getString("device_name"), DeviceRole.valueOf(getString("device_role")), getString("code_hash"), ActivationCodeStatus.valueOf(getString("status")), getTimestamp("expires_at").toInstant(), getTimestamp("used_at")?.toInstant(), getTimestamp("created_at").toInstant())
     private fun ResultSet.toDevice() = DeviceRecord(getObject("id", UUID::class.java), getObject("center_id", UUID::class.java), getString("name"), DeviceRole.valueOf(getString("role")), DeviceStatus.valueOf(getString("status")), getString("device_uid"), getString("token_hash"), getTimestamp("token_revoked_at")?.toInstant(), getString("app_version"), getString("android_version"), getString("model"), getTimestamp("last_seen_at")?.toInstant(), getTimestamp("activated_at")?.toInstant(), getTimestamp("created_at").toInstant(), getTimestamp("updated_at").toInstant())
+    private fun ResultSet.toChild() = ChildRecord(getObject("id", UUID::class.java), getObject("center_id", UUID::class.java), getString("first_name"), getString("last_name"), getObject("birth_date", java.time.LocalDate::class.java), ChildStatus.valueOf(getString("status")), getTimestamp("created_at").toInstant(), getTimestamp("updated_at").toInstant())
+    private fun ResultSet.toSpecialist() = SpecialistRecord(getObject("id", UUID::class.java), getObject("center_id", UUID::class.java), getString("first_name"), getString("last_name"), getString("specialization"), SpecialistStatus.valueOf(getString("status")), getTimestamp("created_at").toInstant(), getTimestamp("updated_at").toInstant())
 
     private val connection: Connection get() = (TransactionManager.current().connection as JdbcConnectionImpl).connection
     private suspend fun <T> database(block: () -> T): T = withContext(Dispatchers.IO) { transaction { block() } }
