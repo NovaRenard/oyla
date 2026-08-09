@@ -2,6 +2,10 @@ package kz.oyla.app.data.remote.dto
 
 import kotlinx.serialization.Serializable
 
+@Serializable enum class WhiteboardColor { BLACK, BLUE, GREEN, RED, ORANGE, PURPLE }
+@Serializable enum class WhiteboardBrushSize { THIN, MEDIUM, THICK }
+@Serializable enum class WhiteboardTool { PEN, ERASER }
+
 @Serializable
 data class CreateSessionRequest(val childName: String, val deviceId: String)
 
@@ -52,11 +56,34 @@ data class ExerciseDto(
     val id: String,
     val instructionText: String,
     val audioAssetKey: String? = null,
-    val options: List<ExerciseOptionDto>,
+    val options: List<ExerciseOptionDto> = emptyList(),
     val title: String? = null,
     val activityType: String = "SINGLE_CHOICE",
-    val audioUrl: String? = null
+    val audioUrl: String? = null,
+    val whiteboardConfig: WhiteboardExerciseConfigDto? = null
 )
+
+@Serializable data class WhiteboardExerciseConfigDto(
+    val backgroundAssetId: String? = null,
+    val backgroundUrl: String? = null,
+    val childDrawingInitiallyEnabled: Boolean = true,
+    val availableColors: List<WhiteboardColor> = emptyList(),
+    val defaultColor: WhiteboardColor = WhiteboardColor.BLACK,
+    val defaultBrushSize: WhiteboardBrushSize = WhiteboardBrushSize.MEDIUM,
+    val allowEraser: Boolean = true,
+    val allowClear: Boolean = true
+)
+@Serializable data class WhiteboardPointDto(val x: Float, val y: Float)
+@Serializable data class WhiteboardStrokeDto(
+    val id: String, val sessionExerciseId: String, val actorRole: String, val actorDeviceId: String,
+    val sequenceNumber: Int, val tool: WhiteboardTool, val color: WhiteboardColor? = null,
+    val brushSize: WhiteboardBrushSize, val points: List<WhiteboardPointDto>, val createdAt: String
+)
+@Serializable data class WhiteboardStateSnapshotDto(
+    val sessionExerciseId: String, val childDrawingEnabled: Boolean, val boardRevision: Int,
+    val clearRevision: Int, val strokes: List<WhiteboardStrokeDto>
+)
+@Serializable data class CompleteWhiteboardExerciseRequest(val sessionExerciseId: String)
 
 @Serializable
 data class SpecialistExerciseDto(val exercise: ExerciseDto, val correctOptionId: String)
@@ -107,7 +134,8 @@ data class ExerciseStateResponse(
     val totalExercises: Int = 0,
     val hasPrevious: Boolean = false,
     val hasNext: Boolean = true,
-    val planCompleted: Boolean = false
+    val planCompleted: Boolean = false,
+    val whiteboardState: WhiteboardStateSnapshotDto? = null
 )
 
 @Serializable
@@ -115,13 +143,18 @@ data class ExerciseSummaryItemDto(
     val position: Int,
     val exerciseId: String,
     val instructionText: String,
-    val correctOptionLabel: String,
+    val correctOptionLabel: String? = null,
     val attemptCount: Int,
     val incorrectAttempts: Int,
     val firstAttemptCorrect: Boolean,
-    val timeToCorrectMs: Long,
+    val timeToCorrectMs: Long? = null,
     val startedAt: String,
-    val completedAt: String
+    val completedAt: String,
+    val activityType: String = "SINGLE_CHOICE",
+    val durationMs: Long? = null,
+    val strokeCount: Int? = null,
+    val childStrokeCount: Int? = null,
+    val specialistStrokeCount: Int? = null
 )
 
 @Serializable
@@ -162,5 +195,28 @@ data class SessionWebSocketEvent(
     val totalExercises: Int? = null,
     val hasPrevious: Boolean? = null,
     val hasNext: Boolean? = null,
-    val planCompleted: Boolean? = null
+    val planCompleted: Boolean? = null,
+    val whiteboardState: WhiteboardStateSnapshotDto? = null,
+    val strokeId: String? = null,
+    val actorRole: String? = null,
+    val tool: WhiteboardTool? = null,
+    val color: WhiteboardColor? = null,
+    val brushSize: WhiteboardBrushSize? = null,
+    val points: List<WhiteboardPointDto> = emptyList(),
+    val stroke: WhiteboardStrokeDto? = null,
+    val childDrawingEnabled: Boolean? = null,
+    val boardRevision: Int? = null,
+    val clearRevision: Int? = null
+)
+
+@Serializable data class WhiteboardClientEvent(
+    val type: String,
+    val sessionExerciseId: String? = null,
+    val strokeId: String? = null,
+    val tool: WhiteboardTool? = null,
+    val color: WhiteboardColor? = null,
+    val brushSize: WhiteboardBrushSize? = null,
+    val points: List<WhiteboardPointDto> = emptyList(),
+    val clientEventId: String? = null,
+    val childDrawingEnabled: Boolean? = null
 )

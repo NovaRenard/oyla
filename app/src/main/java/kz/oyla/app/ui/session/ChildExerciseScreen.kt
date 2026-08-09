@@ -134,14 +134,11 @@ fun ChildExerciseScreen(
             }
             val exercise = exerciseState.exercise
             if (exercise != null) Box(modifier = Modifier.fillMaxWidth(.59f).weight(1f)) {
-                ExerciseCardGrid(
-                    exercise = exercise,
-                    selectedAnswer = exerciseState.latestAnswer?.takeIf { exerciseState.exerciseStatus == ExerciseUiStatus.COMPLETED },
-                    enabled = exerciseState.exerciseStatus == ExerciseUiStatus.RUNNING && !exerciseState.isAnswerPending,
-                    dimmed = exerciseState.exerciseStatus == ExerciseUiStatus.SHOWN,
-                    pendingOptionId = exerciseState.pendingOptionId,
-                    mediaToken = viewModel.mediaToken,
-                    onOptionClick = viewModel::submitAnswer
+                ActivityRenderer(
+                    exercise = exerciseState, isSpecialist = false, mediaToken = viewModel.mediaToken,
+                    selectedAnswer = exerciseState.latestAnswer?.takeIf { exerciseState.exerciseStatus == ExerciseUiStatus.COMPLETED }, onAnswer = viewModel::submitAnswer,
+                    onSelectTool = viewModel::selectWhiteboardTool, onSelectColor = viewModel::selectWhiteboardColor, onSelectBrush = viewModel::selectWhiteboardBrush,
+                    onStrokeStart = viewModel::beginWhiteboardStroke, onStrokePoint = viewModel::appendWhiteboardPoint, onStrokeEnd = viewModel::endWhiteboardStroke, onUndo = viewModel::whiteboardUndo
                 )
             } else {
                 Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxWidth(.59f).weight(1f)) {

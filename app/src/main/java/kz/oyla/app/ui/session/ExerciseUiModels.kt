@@ -4,6 +4,13 @@ import kz.oyla.app.data.remote.SocketConnectionState
 import kz.oyla.app.data.remote.dto.AnswerExerciseResponse
 import kz.oyla.app.data.remote.dto.ExerciseDto
 import kz.oyla.app.data.remote.dto.ExerciseStateResponse
+import kz.oyla.app.data.remote.dto.WhiteboardBrushSize
+import kz.oyla.app.data.remote.dto.WhiteboardColor
+import kz.oyla.app.data.remote.dto.WhiteboardExerciseConfigDto
+import kz.oyla.app.data.remote.dto.WhiteboardPointDto
+import kz.oyla.app.data.remote.dto.WhiteboardStateSnapshotDto
+import kz.oyla.app.data.remote.dto.WhiteboardStrokeDto
+import kz.oyla.app.data.remote.dto.WhiteboardTool
 import kz.oyla.app.BuildConfig
 
 sealed interface ExerciseImage {
@@ -27,7 +34,24 @@ data class ExerciseUiModel(
     val audioAssetKey: String?,
     val options: List<ExerciseOptionUiModel>,
     val correctOptionId: String? = null,
-    val audioUrl: String? = null
+    val audioUrl: String? = null,
+    val activityType: String = "SINGLE_CHOICE",
+    val whiteboardConfig: WhiteboardExerciseConfigDto? = null
+)
+
+data class WhiteboardStrokeUi(
+    val id: String, val actorRole: String, val tool: WhiteboardTool, val color: WhiteboardColor?,
+    val brushSize: WhiteboardBrushSize, val points: List<WhiteboardPointDto>, val sequenceNumber: Int = Int.MAX_VALUE
+)
+data class WhiteboardUiState(
+    val childDrawingEnabled: Boolean = true,
+    val boardRevision: Int = 0,
+    val clearRevision: Int = 0,
+    val strokes: List<WhiteboardStrokeUi> = emptyList(),
+    val inProgress: Map<String, WhiteboardStrokeUi> = emptyMap(),
+    val selectedTool: WhiteboardTool = WhiteboardTool.PEN,
+    val selectedColor: WhiteboardColor = WhiteboardColor.BLACK,
+    val selectedBrushSize: WhiteboardBrushSize = WhiteboardBrushSize.MEDIUM
 )
 
 data class AnswerUiModel(
@@ -59,6 +83,7 @@ data class ExerciseUiState(
     val feedbackMessage: String? = null,
     val playInstructionRequest: Int = 0,
     val errorMessage: String? = null
+    ,val whiteboard: WhiteboardUiState? = null
 )
 
 internal fun String.toExerciseUiStatus(): ExerciseUiStatus = runCatching { ExerciseUiStatus.valueOf(this) }
@@ -67,7 +92,8 @@ internal fun String.toExerciseUiStatus(): ExerciseUiStatus = runCatching { Exerc
 internal fun ExerciseDto.toUi(correctOptionId: String? = null) = ExerciseUiModel(
     id = id, instructionText = instructionText, audioAssetKey = audioAssetKey,
     options = options.sortedBy { it.position }.map { ExerciseOptionUiModel(it.id, it.label, it.imageAssetKey, it.position, it.imageUrl.toAbsoluteMediaUrl()) },
-    correctOptionId = correctOptionId, audioUrl = audioUrl.toAbsoluteMediaUrl()
+    correctOptionId = correctOptionId, audioUrl = audioUrl.toAbsoluteMediaUrl(), activityType = activityType,
+    whiteboardConfig = whiteboardConfig?.copy(backgroundUrl = whiteboardConfig.backgroundUrl.toAbsoluteMediaUrl())
 )
 
 internal fun AnswerExerciseResponse.toUi() = AnswerUiModel(
@@ -79,7 +105,7 @@ internal fun ExerciseStateResponse.toUiState(sessionId: String, childName: Strin
     exercise = exercise?.toUi(correctOptionId), sessionExerciseId = sessionExerciseId,
     exerciseStatus = exerciseStatus.toExerciseUiStatus(), latestAnswer = latestAnswer?.toUi(),
     attemptCount = attemptCount, startedAt = startedAt, currentPosition = currentPosition,
-    totalExercises = totalExercises, hasNext = hasNext, planCompleted = planCompleted
+    totalExercises = totalExercises, hasNext = hasNext, planCompleted = planCompleted, whiteboard = whiteboardState?.toUi()
 )
 
 /** A new plan position must never retain result, timer or audio state from its predecessor. */
@@ -90,7 +116,8 @@ internal fun ExerciseUiState.resetForExerciseChange(
     newPosition: Int,
     newTotal: Int,
     newHasNext: Boolean,
-    newPlanCompleted: Boolean
+    newPlanCompleted: Boolean,
+    newWhiteboard: WhiteboardUiState? = null
 ) = ExerciseUiState(
     sessionId = sessionId,
     childName = childName,
@@ -101,7 +128,8 @@ internal fun ExerciseUiState.resetForExerciseChange(
     currentPosition = newPosition,
     totalExercises = newTotal,
     hasNext = newHasNext,
-    planCompleted = newPlanCompleted
+    planCompleted = newPlanCompleted,
+    whiteboard = newWhiteboard
 )
 
 internal fun ExerciseUiState.canMoveToNext() =
@@ -113,3 +141,9 @@ internal fun ExerciseUiState.canOpenSummary() =
 private fun String?.toAbsoluteMediaUrl(): String? = this?.let { url ->
     if (url.startsWith("http://") || url.startsWith("https://")) url else "${BuildConfig.API_BASE_URL.trimEnd('/')}$url"
 }
+
+internal fun WhiteboardStateSnapshotDto.toUi() = WhiteboardUiState(
+    childDrawingEnabled = childDrawingEnabled, boardRevision = boardRevision, clearRevision = clearRevision,
+    strokes = strokes.sortedBy { it.sequenceNumber }.map { it.toUi() }
+)
+internal fun WhiteboardStrokeDto.toUi() = WhiteboardStrokeUi(id, actorRole, tool, color, brushSize, points, sequenceNumber)

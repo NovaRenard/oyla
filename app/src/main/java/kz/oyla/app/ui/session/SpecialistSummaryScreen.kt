@@ -113,10 +113,17 @@ private fun SummaryExerciseRow(item: ExerciseSummaryItemDto) {
                 Text("Задание ${item.position}", color = OylaNavy, fontSize = 19.sp, fontWeight = FontWeight.Bold)
                 Text(soundTitle(item.exerciseId), color = OylaBlue, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
             }
-            SummaryValue("Правильный ответ", item.correctOptionLabel, Modifier.weight(1.35f))
-            SummaryValue("Попыток", item.attemptCount.toString(), Modifier.weight(.65f))
-            SummaryValue("Ошибок", item.incorrectAttempts.toString(), Modifier.weight(.65f))
-            SummaryValue("Время", formatTime(item.timeToCorrectMs), Modifier.weight(.7f))
+            if (item.activityType == "WHITEBOARD") {
+                SummaryValue("Доска", "Штрихов: ${item.strokeCount ?: 0}", Modifier.weight(1.35f))
+                SummaryValue("Ребёнок", (item.childStrokeCount ?: 0).toString(), Modifier.weight(.65f))
+                SummaryValue("Специалист", (item.specialistStrokeCount ?: 0).toString(), Modifier.weight(.65f))
+                SummaryValue("Время", formatTime(item.durationMs ?: 0), Modifier.weight(.7f))
+            } else {
+                SummaryValue("Правильный ответ", item.correctOptionLabel.orEmpty(), Modifier.weight(1.35f))
+                SummaryValue("Попыток", item.attemptCount.toString(), Modifier.weight(.65f))
+                SummaryValue("Ошибок", item.incorrectAttempts.toString(), Modifier.weight(.65f))
+                SummaryValue("Время", formatTime(item.timeToCorrectMs ?: 0), Modifier.weight(.7f))
+            }
         }
     }
 }

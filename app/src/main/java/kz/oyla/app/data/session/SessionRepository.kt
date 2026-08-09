@@ -22,6 +22,7 @@ import kz.oyla.app.data.remote.dto.NextExerciseRequest
 import kz.oyla.app.data.remote.dto.SessionSummaryResponse
 import kz.oyla.app.data.remote.dto.DeviceLessonResponse
 import kz.oyla.app.data.remote.dto.ChildLessonAssignmentResponse
+import kz.oyla.app.data.remote.dto.CompleteWhiteboardExerciseRequest
 import kz.oyla.app.domain.model.DeviceRole
 
 data class SessionDetails(
@@ -143,6 +144,10 @@ class SessionRepository(
     suspend fun nextExercise(session: SessionDetails, currentSessionExerciseId: String): ExerciseActionResult<ExerciseStateResponse> =
         api.nextExercise(session.sessionId, session.token, NextExerciseRequest(currentSessionExerciseId))
             .toExerciseResult("Не удалось открыть следующее задание")
+
+    suspend fun completeWhiteboardExercise(session: SessionDetails, sessionExerciseId: String): ExerciseActionResult<ExerciseStateResponse> =
+        api.completeWhiteboardExercise(session.sessionId, session.token, CompleteWhiteboardExerciseRequest(sessionExerciseId))
+            .toExerciseResult("Не удалось завершить доску")
 
     suspend fun getSummary(session: SessionDetails): ExerciseActionResult<SessionSummaryResponse> =
         api.getSummary(session.sessionId, session.token).toExerciseResult("Не удалось загрузить итог занятия")

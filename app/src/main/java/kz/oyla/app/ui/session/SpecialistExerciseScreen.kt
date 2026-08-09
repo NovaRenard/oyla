@@ -114,14 +114,17 @@ fun SpecialistExerciseScreen(
                     Column(modifier = Modifier.fillMaxSize().padding(22.dp)) {
                         Text("Задание ${exercise.currentPosition} из ${exercise.totalExercises}", color = OylaNavy, fontSize = 30.sp, fontWeight = FontWeight.Bold)
                         Text(exercise.exercise?.instructionText ?: "Загружаем задание…", color = OylaNavy, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp, bottom = 16.dp))
-                        exercise.exercise?.let {
-                            ExerciseCardGrid(exercise = it, selectedAnswer = exercise.latestAnswer, enabled = false, showCorrectMarker = true, mediaToken = viewModel.mediaToken)
-                        }
+                        ActivityRenderer(
+                            exercise = exercise, isSpecialist = true, mediaToken = viewModel.mediaToken, selectedAnswer = exercise.latestAnswer,
+                            onSelectTool = viewModel::selectWhiteboardTool, onSelectColor = viewModel::selectWhiteboardColor, onSelectBrush = viewModel::selectWhiteboardBrush,
+                            onStrokeStart = viewModel::beginWhiteboardStroke, onStrokePoint = viewModel::appendWhiteboardPoint, onStrokeEnd = viewModel::endWhiteboardStroke,
+                            onUndo = viewModel::whiteboardUndo, onClear = viewModel::whiteboardClear, onChildPermission = viewModel::setChildDrawingEnabled
+                        )
                     }
                 }
                 ResultsPanel(
                     exercise = exercise, childConnected = state.session?.childConnected == true, socketState = state.socketState,
-                    onShow = viewModel::showExercise, onStart = viewModel::startExercise, onNext = viewModel::nextExercise,
+                    onShow = viewModel::showExercise, onStart = viewModel::startExercise, onCompleteExercise = viewModel::completeWhiteboardExercise, onNext = viewModel::nextExercise,
                     onSummary = onOpenSummary, onComplete = { showConfirmation = true }, modifier = Modifier.weight(.35f).fillMaxHeight()
                 )
             }
@@ -175,7 +178,7 @@ private fun PlanProgress(exercise: ExerciseUiState) {
 @Composable
 private fun ResultsPanel(
     exercise: ExerciseUiState, childConnected: Boolean, socketState: SocketConnectionState,
-    onShow: () -> Unit, onStart: () -> Unit, onNext: () -> Unit, onSummary: () -> Unit,
+    onShow: () -> Unit, onStart: () -> Unit, onCompleteExercise: () -> Unit, onNext: () -> Unit, onSummary: () -> Unit,
     onComplete: () -> Unit, modifier: Modifier
 ) {
     Card(shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(containerColor = Color.White.copy(.96f)), modifier = modifier) {
@@ -204,7 +207,7 @@ private fun ResultsPanel(
                     Spacer(Modifier.height(8.dp))
                     OylaPrimaryButton("Начать", Icons.Outlined.PlayArrow, "Начать", onStart, enabled = socketState == SocketConnectionState.CONNECTED && !exercise.isCommandLoading, textSize = 16.sp, minHeight = 54.dp, modifier = commandButtonModifier)
                 }
-                ExerciseUiStatus.RUNNING -> OylaPrimaryButton("Задание выполняется", Icons.Outlined.PlayArrow, "Задание выполняется", {}, enabled = false, textSize = 16.sp, minHeight = 54.dp, modifier = Modifier.fillMaxWidth())
+                ExerciseUiStatus.RUNNING -> if (exercise.exercise?.activityType == "WHITEBOARD") OylaPrimaryButton("Завершить упражнение", Icons.Outlined.CheckCircle, "Завершить упражнение", onCompleteExercise, enabled = !exercise.isCommandLoading, textSize = 16.sp, minHeight = 54.dp, modifier = Modifier.fillMaxWidth()) else OylaPrimaryButton("Задание выполняется", Icons.Outlined.PlayArrow, "Задание выполняется", {}, enabled = false, textSize = 16.sp, minHeight = 54.dp, modifier = Modifier.fillMaxWidth())
                 ExerciseUiStatus.COMPLETED -> if (exercise.currentPosition < exercise.totalExercises) {
                     OylaPrimaryButton("Следующее задание", Icons.Outlined.NavigateNext, "Следующее задание", onNext, enabled = exercise.canMoveToNext(), textSize = 16.sp, minHeight = 54.dp, modifier = Modifier.fillMaxWidth())
                 } else {

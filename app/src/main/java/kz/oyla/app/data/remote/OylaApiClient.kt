@@ -31,6 +31,7 @@ import kz.oyla.app.data.remote.dto.AnswerExerciseRequest
 import kz.oyla.app.data.remote.dto.AnswerExerciseResponse
 import kz.oyla.app.data.remote.dto.NextExerciseRequest
 import kz.oyla.app.data.remote.dto.SessionSummaryResponse
+import kz.oyla.app.data.remote.dto.CompleteWhiteboardExerciseRequest
 
 interface OylaApi {
     suspend fun createSession(request: CreateSessionRequest): NetworkResult<CreateSessionResponse>
@@ -46,6 +47,7 @@ interface OylaApi {
     suspend fun answerExercise(sessionId: String, token: String, request: AnswerExerciseRequest): NetworkResult<AnswerExerciseResponse> = NetworkResult.HttpError(501)
     suspend fun nextExercise(sessionId: String, token: String, request: NextExerciseRequest): NetworkResult<ExerciseStateResponse> = NetworkResult.HttpError(501)
     suspend fun getSummary(sessionId: String, token: String): NetworkResult<SessionSummaryResponse> = NetworkResult.HttpError(501)
+    suspend fun completeWhiteboardExercise(sessionId: String, token: String, request: CompleteWhiteboardExerciseRequest): NetworkResult<ExerciseStateResponse> = NetworkResult.HttpError(501)
 }
 
 class OylaApiClient(
@@ -115,6 +117,10 @@ class OylaApiClient(
             header(HttpHeaders.Authorization, "Bearer $token")
         }
     }
+
+    override suspend fun completeWhiteboardExercise(sessionId: String, token: String, request: CompleteWhiteboardExerciseRequest) = requestJsonAuth<ExerciseStateResponse, CompleteWhiteboardExerciseRequest>(
+        "/api/v1/sessions/$sessionId/exercise/complete-whiteboard", token, request
+    )
 
     private suspend fun postNoContent(path: String, token: String): NetworkResult<Unit> = try {
         val response = client.post("${baseUrl.trimEnd('/')}$path") { header(HttpHeaders.Authorization, "Bearer $token") }

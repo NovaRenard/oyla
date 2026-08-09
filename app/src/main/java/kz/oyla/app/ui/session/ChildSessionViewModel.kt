@@ -20,6 +20,11 @@ import kz.oyla.app.data.session.SessionActionResult
 import kz.oyla.app.data.session.SessionDetails
 import kz.oyla.app.data.session.SessionRepository
 import kz.oyla.app.data.remote.dto.ChildLessonAssignmentResponse
+import kz.oyla.app.data.remote.dto.WhiteboardPointDto
+import kz.oyla.app.data.remote.dto.WhiteboardTool
+import kz.oyla.app.data.remote.dto.WhiteboardColor
+import kz.oyla.app.data.remote.dto.WhiteboardBrushSize
+import kz.oyla.app.data.remote.dto.WhiteboardClientEvent
 import kz.oyla.app.domain.model.DeviceRole
 
 data class ChildSessionUiState(
@@ -42,6 +47,9 @@ class ChildSessionViewModel(
     private var socketJob: Job? = null
     private var timerJob: Job? = null
     private val answerSubmissionGuard = AnswerSubmissionGuard()
+    private data class StrokeBuffer(val points: MutableList<WhiteboardPointDto> = mutableListOf(), var flushJob: Job? = null)
+    private val strokeBuffers = mutableMapOf<String, StrokeBuffer>()
+    private val localStrokeIds = mutableSetOf<String>()
 
     fun connect(connectionCode: String) {
         if (_uiState.value.isLoading || !connectionCode.matches(Regex("\\d{4}"))) return
@@ -157,6 +165,44 @@ class ChildSessionViewModel(
 
     fun repeatInstruction() { setExercise { it.copy(playInstructionRequest = it.playInstructionRequest + 1) } }
 
+    fun selectWhiteboardTool(tool: WhiteboardTool) = setExercise { state ->
+        val config = state.exercise?.whiteboardConfig ?: return@setExercise state
+        if (tool == WhiteboardTool.ERASER && !config.allowEraser) state else state.copy(whiteboard = (state.whiteboard ?: defaultWhiteboard(config)).copy(selectedTool = tool))
+    }
+    fun selectWhiteboardColor(color: WhiteboardColor) = setExercise { state ->
+        val config = state.exercise?.whiteboardConfig ?: return@setExercise state
+        if (color !in config.availableColors) state else state.copy(whiteboard = (state.whiteboard ?: defaultWhiteboard(config)).copy(selectedTool = WhiteboardTool.PEN, selectedColor = color))
+    }
+    fun selectWhiteboardBrush(size: WhiteboardBrushSize) = setExercise { state ->
+        val config = state.exercise?.whiteboardConfig ?: return@setExercise state
+        state.copy(whiteboard = (state.whiteboard ?: defaultWhiteboard(config)).copy(selectedBrushSize = size))
+    }
+    fun beginWhiteboardStroke(point: WhiteboardPointDto): String? {
+        val state = _uiState.value.exercise; val session = _uiState.value.session ?: return null; val config = state.exercise?.whiteboardConfig ?: return null
+        val board = state.whiteboard ?: defaultWhiteboard(config); val id = UUID.randomUUID().toString()
+        if (state.exerciseStatus != ExerciseUiStatus.RUNNING || state.connectionState != SocketConnectionState.CONNECTED || !board.childDrawingEnabled) return null
+        val stroke = WhiteboardStrokeUi(id, "CHILD", board.selectedTool, board.selectedTool.takeIf { it == WhiteboardTool.PEN }?.let { board.selectedColor }, board.selectedBrushSize, emptyList())
+        if (!webSocketClient.sendWhiteboardEvent(session.sessionId, WhiteboardClientEvent("WHITEBOARD_STROKE_STARTED", state.sessionExerciseId, id, stroke.tool, stroke.color, stroke.brushSize))) return null
+        localStrokeIds += id; strokeBuffers[id] = StrokeBuffer()
+        setExercise { it.copy(whiteboard = board.copy(inProgress = board.inProgress + (id to stroke))) }
+        appendWhiteboardPoint(id, point)
+        return id
+    }
+    fun appendWhiteboardPoint(strokeId: String, point: WhiteboardPointDto) {
+        setExercise { state -> val board = state.whiteboard ?: return@setExercise state; val stroke = board.inProgress[strokeId] ?: return@setExercise state
+            state.copy(whiteboard = board.copy(inProgress = board.inProgress + (strokeId to stroke.copy(points = stroke.points + point)))) }
+        val buffer = strokeBuffers[strokeId] ?: return; buffer.points += point
+        if (buffer.points.size >= 12) flushWhiteboardPoints(strokeId) else if (buffer.flushJob == null) buffer.flushJob = viewModelScope.launch { delay(32); flushWhiteboardPoints(strokeId) }
+    }
+    fun endWhiteboardStroke(strokeId: String) {
+        flushWhiteboardPoints(strokeId); val session = _uiState.value.session ?: return; val state = _uiState.value.exercise
+        if (webSocketClient.sendWhiteboardEvent(session.sessionId, WhiteboardClientEvent("WHITEBOARD_STROKE_COMPLETED", state.sessionExerciseId, strokeId, clientEventId = UUID.randomUUID().toString()))) strokeBuffers.remove(strokeId)?.flushJob?.cancel()
+    }
+    fun whiteboardUndo() = run {
+        val session = _uiState.value.session ?: return@run; val state = _uiState.value.exercise
+        webSocketClient.sendWhiteboardEvent(session.sessionId, WhiteboardClientEvent("WHITEBOARD_UNDO", state.sessionExerciseId))
+    }
+
     private fun loadCurrentExercise() {
         val session = _uiState.value.session ?: return
         viewModelScope.launch {
@@ -198,6 +244,7 @@ class ChildSessionViewModel(
             "EXERCISE_SHOWN" -> applyExerciseEvent(event)
             "EXERCISE_STARTED" -> applyExerciseEvent(event, requestAudio = true)
             "ANSWER_RECEIVED", "EXERCISE_COMPLETED" -> applyExerciseEvent(event)
+            "WHITEBOARD_STROKE_STARTED", "WHITEBOARD_STROKE_POINTS", "WHITEBOARD_STROKE_COMPLETED", "WHITEBOARD_CLEARED", "WHITEBOARD_UNDONE", "WHITEBOARD_CHILD_PERMISSION_CHANGED" -> applyWhiteboardEvent(event)
             "EXERCISE_PLAN_COMPLETED" -> setExercise { it.copy(
                 planCompleted = true, feedbackMessage = "Все задания выполнены!\nОтличная работа!", isAnswerPending = false, pendingOptionId = null
             ) }
@@ -225,7 +272,8 @@ class ChildSessionViewModel(
             newPosition = event.currentPosition ?: old.currentPosition,
             newTotal = event.totalExercises ?: old.totalExercises,
             newHasNext = event.hasNext ?: ((event.currentPosition ?: old.currentPosition) < (event.totalExercises ?: old.totalExercises)),
-            newPlanCompleted = event.planCompleted ?: false
+            newPlanCompleted = event.planCompleted ?: false,
+            newWhiteboard = event.whiteboardState?.toUi()
         ) else old
         val answer = event.latestAnswer?.toUi() ?: if (event.selectedOptionId != null && event.isCorrect != null) {
             AnswerUiModel(event.selectedOptionId, event.selectedOptionLabel.orEmpty(), event.isCorrect,
@@ -247,6 +295,7 @@ class ChildSessionViewModel(
                 totalExercises = event.totalExercises ?: base.totalExercises,
                 hasNext = event.hasNext ?: base.hasNext,
                 planCompleted = event.planCompleted ?: base.planCompleted,
+                whiteboard = event.whiteboardState?.toUi() ?: base.whiteboard,
                 feedbackMessage = completedFeedback,
                 playInstructionRequest = base.playInstructionRequest + if (requestAudio) 1 else 0
             )
@@ -269,6 +318,34 @@ class ChildSessionViewModel(
     private fun setExercise(update: (ExerciseUiState) -> ExerciseUiState) {
         _uiState.value = _uiState.value.copy(exercise = update(_uiState.value.exercise))
     }
+    private fun flushWhiteboardPoints(strokeId: String) {
+        val buffer = strokeBuffers[strokeId] ?: return; buffer.flushJob?.cancel(); buffer.flushJob = null
+        val points = buffer.points.toList(); buffer.points.clear(); if (points.isEmpty()) return
+        val session = _uiState.value.session ?: return; val state = _uiState.value.exercise
+        webSocketClient.sendWhiteboardEvent(session.sessionId, WhiteboardClientEvent("WHITEBOARD_STROKE_POINTS", state.sessionExerciseId, strokeId, points = points))
+    }
+    private fun applyWhiteboardEvent(event: SessionWebSocketEvent) = setExercise { state ->
+        val board = state.whiteboard ?: state.exercise?.whiteboardConfig?.let(::defaultWhiteboard) ?: return@setExercise state
+        when (event.type) {
+            "WHITEBOARD_STROKE_STARTED" -> { val id = event.strokeId ?: return@setExercise state
+                if (id in board.inProgress) state else state.copy(whiteboard = board.copy(inProgress = board.inProgress + (id to WhiteboardStrokeUi(id, event.actorRole.orEmpty(), checkNotNull(event.tool), event.color, checkNotNull(event.brushSize), emptyList())))) }
+            "WHITEBOARD_STROKE_POINTS" -> { val id = event.strokeId ?: return@setExercise state
+                if (id in localStrokeIds) state else board.inProgress[id]?.let { stroke -> state.copy(whiteboard = board.copy(inProgress = board.inProgress + (id to stroke.copy(points = stroke.points + event.points)))) } ?: state }
+            "WHITEBOARD_STROKE_COMPLETED" -> event.stroke?.toUi()?.let { stroke -> localStrokeIds.remove(stroke.id); state.copy(whiteboard = board.copy(strokes = (board.strokes.filterNot { it.id == stroke.id } + stroke).sortedBy { it.sequenceNumber }, inProgress = board.inProgress - stroke.id)) } ?: state
+            "WHITEBOARD_CLEARED" -> state.copy(whiteboard = board.copy(strokes = emptyList(), inProgress = emptyMap(), clearRevision = event.clearRevision ?: board.clearRevision, boardRevision = event.boardRevision ?: board.boardRevision))
+            "WHITEBOARD_UNDONE" -> state.copy(whiteboard = board.copy(strokes = board.strokes.filterNot { it.id == event.strokeId }, boardRevision = event.boardRevision ?: board.boardRevision))
+            "WHITEBOARD_CHILD_PERMISSION_CHANGED" -> {
+                val enabled = event.childDrawingEnabled ?: board.childDrawingEnabled
+                state.copy(whiteboard = board.copy(
+                    childDrawingEnabled = enabled,
+                    inProgress = if (enabled) board.inProgress else board.inProgress.filterValues { it.actorRole != "CHILD" },
+                    boardRevision = event.boardRevision ?: board.boardRevision
+                ))
+            }
+            else -> state
+        }
+    }
+    private fun defaultWhiteboard(config: kz.oyla.app.data.remote.dto.WhiteboardExerciseConfigDto) = WhiteboardUiState(selectedColor = config.defaultColor, selectedBrushSize = config.defaultBrushSize, childDrawingEnabled = config.childDrawingInitiallyEnabled)
     override fun onCleared() { socketJob?.cancel(); timerJob?.cancel(); super.onCleared() }
 }
 
