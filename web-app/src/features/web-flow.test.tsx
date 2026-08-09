@@ -1,13 +1,14 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { BrowserRouter } from "react-router-dom";
+import { BrowserRouter, MemoryRouter, Route, Routes } from "react-router-dom";
 import { api, tokenStore } from "../api/client";
 import { AuthProvider } from "../auth/AuthContext";
 import { ToastProvider } from "../ui/Toast";
 import { App } from "../App";
 import { DevicesPage, DeviceDetailsPage } from "./devices/DevicesPages";
 import { DeviceStatusBadge } from "./devices/DeviceBits";
+import { ExerciseEditorPage, TemplateEditorPage } from "./content/ContentPages";
 
 const auth = { user: { id: "u1", email: "owner@example.com", firstName: "Алия", status: "ACTIVE" }, centers: [{ center: { id: "c1", name: "Центр", slug: "center", status: "ACTIVE", timezone: "Asia/Almaty" }, role: "OWNER", status: "ACTIVE" }], activeCenter: { id: "c1", name: "Центр", slug: "center", status: "ACTIVE", timezone: "Asia/Almaty" }, accessToken: "access-token", accessTokenExpiresAt: "2030-01-01T00:00:00Z" };
 const device = { id: "d1", name: "Детский планшет — Кабинет 1", role: "CHILD" as const, status: "ACTIVE" as const, isOnline: false, activatedAt: "2026-01-01T00:00:00Z" };
@@ -127,5 +128,38 @@ describe("web device flow", () => {
     tokenStore.set("access-token"); vi.stubGlobal("fetch", vi.fn().mockResolvedValue(empty()));
     await api.logout();
     await waitFor(() => expect(tokenStore.get()).toBeNull());
+  });
+});
+
+describe("WHITEBOARD content flow", () => {
+  it("creates a WHITEBOARD definition with its bounded palette and no choice options", async () => {
+    tokenStore.set("access-token"); let submitted: unknown;
+    vi.stubGlobal("fetch", vi.fn((_: RequestInfo | URL, init?: RequestInit) => {
+      submitted = init?.body ? JSON.parse(String(init.body)) : undefined;
+      return Promise.resolve(json({ id: "board-1", ownership: "CENTER", activityType: "WHITEBOARD", title: "Дорожка", instructionText: "Проведи линию", status: "ACTIVE", options: [], whiteboardConfig: submitted && (submitted as { whiteboardConfig: unknown }).whiteboardConfig, templateUsageCount: 0, createdAt: "2026-08-09T00:00:00Z", updatedAt: "2026-08-09T00:00:00Z" }, 201));
+    }));
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ToastProvider><MemoryRouter initialEntries={["/content/exercises/new"]}><Routes><Route path="/content/exercises/new" element={<ExerciseEditorPage />} /><Route path="/content/exercises/:id" element={<div>Сохранено</div>} /></Routes></MemoryRouter></ToastProvider></QueryClientProvider>);
+
+    fireEvent.change(screen.getByLabelText("Тип упражнения"), { target: { value: "WHITEBOARD" } });
+    fireEvent.change(screen.getByLabelText("Название"), { target: { value: "Дорожка" } });
+    fireEvent.change(screen.getByLabelText("Инструкция"), { target: { value: "Проведи линию" } });
+    expect(screen.getByRole("heading", { name: "Настройки белой доски" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    await waitFor(() => expect(submitted).toMatchObject({ activityType: "WHITEBOARD", whiteboardConfig: { availableColors: ["BLACK", "BLUE", "GREEN", "RED"], defaultColor: "BLACK" } }));
+    expect((submitted as { options?: unknown }).options).toBeUndefined();
+  });
+
+  it("shows WHITEBOARD alongside SINGLE_CHOICE in the template builder", async () => {
+    tokenStore.set("access-token");
+    const exercise = (id: string, activityType: "SINGLE_CHOICE" | "WHITEBOARD", title: string) => ({ id, ownership: "CENTER", activityType, title, instructionText: "Инструкция", status: "ACTIVE", options: [], whiteboardConfig: activityType === "WHITEBOARD" ? { childDrawingInitiallyEnabled: true, availableColors: ["BLACK", "BLUE", "GREEN", "RED"], defaultColor: "BLACK", defaultBrushSize: "MEDIUM", allowEraser: true, allowClear: true } : undefined, templateUsageCount: 0, createdAt: "2026-08-09T00:00:00Z", updatedAt: "2026-08-09T00:00:00Z" });
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(json([exercise("choice", "SINGLE_CHOICE", "Найди ракету"), exercise("board", "WHITEBOARD", "Нарисуй дорожку")]))));
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ToastProvider><MemoryRouter initialEntries={["/content/templates/new"]}><Routes><Route path="/content/templates/new" element={<TemplateEditorPage />} /></Routes></MemoryRouter></ToastProvider></QueryClientProvider>);
+
+    expect(await screen.findByText("Белая доска · Центр")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Найди ракету/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Нарисуй дорожку/ }));
+    expect(screen.getByText("1. Найди ракету")).toBeInTheDocument();
+    expect(screen.getByText("2. Нарисуй дорожку")).toBeInTheDocument();
   });
 });

@@ -1,4 +1,4 @@
-import { ApiError, type ActivationCode, type AuthResponse, type Center, type Child, type ContentExercise, type ContentOwnership, type Device, type DeviceRole, type DeviceStatus, type Lesson, type LessonDetails, type LessonStatus, type LessonTemplate, type MediaAsset, type MeResponse, type Specialist } from "./types";
+import { ApiError, type ActivationCode, type ActivityType, type AuthResponse, type Center, type Child, type ContentExercise, type ContentOwnership, type Device, type DeviceRole, type DeviceStatus, type Lesson, type LessonDetails, type LessonStatus, type LessonTemplate, type MediaAsset, type MeResponse, type Specialist, type WhiteboardExerciseConfig } from "./types";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 let accessToken: string | null = null;
@@ -147,13 +147,13 @@ export const api = {
   getLesson: (id: string) => authenticated<LessonDetails>(`/api/v1/lessons/${id}`),
   childLessons: (id: string, status?: LessonStatus) => authenticated<Lesson[]>(`/api/v1/children/${id}/lessons${status ? `?status=${status}` : ""}`),
   specialistLessons: (id: string, status?: LessonStatus) => authenticated<Lesson[]>(`/api/v1/specialists/${id}/lessons${status ? `?status=${status}` : ""}`),
-  listExercises: (filters?: { ownership?: ContentOwnership; status?: "ACTIVE" | "ARCHIVED"; search?: string }) => {
-    const query = new URLSearchParams(); if (filters?.ownership) query.set("ownership", filters.ownership); if (filters?.status) query.set("status", filters.status); if (filters?.search?.trim()) query.set("search", filters.search.trim());
+  listExercises: (filters?: { ownership?: ContentOwnership; status?: "ACTIVE" | "ARCHIVED"; activityType?: ActivityType; search?: string }) => {
+    const query = new URLSearchParams(); if (filters?.ownership) query.set("ownership", filters.ownership); if (filters?.status) query.set("status", filters.status); if (filters?.activityType) query.set("activityType", filters.activityType); if (filters?.search?.trim()) query.set("search", filters.search.trim());
     return authenticated<ContentExercise[]>(`/api/v1/exercises${query.size ? `?${query}` : ""}`);
   },
   getExercise: (id: string) => authenticated<ContentExercise>(`/api/v1/exercises/${id}`),
-  createExercise: (input: { title: string; instructionText: string; instructionAudioAssetId?: string; options: Array<{ id?: string; label?: string; imageAssetId?: string; isCorrect: boolean }> }) => authenticated<ContentExercise>("/api/v1/exercises", { method: "POST", body: input }),
-  updateExercise: (id: string, input: { title?: string; instructionText?: string; instructionAudioAssetId?: string; options?: Array<{ id?: string; label?: string; imageAssetId?: string; isCorrect: boolean }> }) => authenticated<ContentExercise>(`/api/v1/exercises/${id}`, { method: "PATCH", body: input }),
+  createExercise: (input: { title: string; instructionText: string; activityType: ActivityType; instructionAudioAssetId?: string; options?: Array<{ id?: string; label?: string; imageAssetId?: string; isCorrect: boolean }>; whiteboardConfig?: WhiteboardExerciseConfig }) => authenticated<ContentExercise>("/api/v1/exercises", { method: "POST", body: input }),
+  updateExercise: (id: string, input: { title?: string; instructionText?: string; instructionAudioAssetId?: string; options?: Array<{ id?: string; label?: string; imageAssetId?: string; isCorrect: boolean }>; whiteboardConfig?: WhiteboardExerciseConfig }) => authenticated<ContentExercise>(`/api/v1/exercises/${id}`, { method: "PATCH", body: input }),
   archiveExercise: (id: string) => authenticated<ContentExercise>(`/api/v1/exercises/${id}/archive`, { method: "POST" }),
   restoreExercise: (id: string) => authenticated<ContentExercise>(`/api/v1/exercises/${id}/restore`, { method: "POST" }),
   duplicateExercise: (id: string) => authenticated<ContentExercise>(`/api/v1/exercises/${id}/duplicate`, { method: "POST" }),

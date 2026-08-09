@@ -2,7 +2,7 @@ export type DeviceRole = "CHILD" | "SPECIALIST";
 export type DeviceStatus = "ACTIVE" | "BLOCKED" | "UNLINKED";
 export type CatalogStatus = "ACTIVE" | "ARCHIVED";
 export type ContentOwnership = "SYSTEM" | "CENTER";
-export type ActivityType = "SINGLE_CHOICE";
+export type ActivityType = "SINGLE_CHOICE" | "WHITEBOARD";
 export type MediaType = "IMAGE" | "AUDIO";
 
 export interface User {
@@ -102,7 +102,10 @@ export interface Lesson {
 
 export interface MediaAsset { id: string; ownership: ContentOwnership; type: MediaType; originalFilename: string; mimeType: string; sizeBytes: number; url: string; createdAt: string; }
 export interface ContentExerciseOption { id: string; label?: string; imageAssetId?: string; imageUrl?: string; localImageAssetKey?: string; sortOrder: number; isCorrect: boolean; }
-export interface ContentExercise { id: string; ownership: ContentOwnership; activityType: ActivityType; title: string; instructionText: string; instructionAudioAssetId?: string; audioUrl?: string; localAudioAssetKey?: string; status: CatalogStatus; options: ContentExerciseOption[]; templateUsageCount: number; createdAt: string; updatedAt: string; }
+export type WhiteboardColor = "BLACK" | "BLUE" | "GREEN" | "RED" | "ORANGE" | "PURPLE";
+export type WhiteboardBrushSize = "THIN" | "MEDIUM" | "THICK";
+export interface WhiteboardExerciseConfig { backgroundAssetId?: string; backgroundUrl?: string; childDrawingInitiallyEnabled: boolean; availableColors: WhiteboardColor[]; defaultColor: WhiteboardColor; defaultBrushSize: WhiteboardBrushSize; allowEraser: boolean; allowClear: boolean; }
+export interface ContentExercise { id: string; ownership: ContentOwnership; activityType: ActivityType; title: string; instructionText: string; instructionAudioAssetId?: string; audioUrl?: string; localAudioAssetKey?: string; status: CatalogStatus; options: ContentExerciseOption[]; whiteboardConfig?: WhiteboardExerciseConfig; templateUsageCount: number; createdAt: string; updatedAt: string; }
 export interface LessonTemplateItem { id: string; exerciseId: string; position: number; exerciseTitle?: string; activityType?: ActivityType; }
 export interface LessonTemplate { id: string; ownership: ContentOwnership; name: string; description?: string; status: CatalogStatus; exerciseCount: number; items: LessonTemplateItem[]; createdAt: string; updatedAt: string; }
 
@@ -114,6 +117,11 @@ export interface LessonExercise {
   attemptCount: number;
   incorrectAttempts: number;
   timeToCorrectMs?: number;
+  activityType: ActivityType;
+  durationMs?: number;
+  strokeCount?: number;
+  childStrokeCount?: number;
+  specialistStrokeCount?: number;
 }
 
 export interface LessonDetails {
