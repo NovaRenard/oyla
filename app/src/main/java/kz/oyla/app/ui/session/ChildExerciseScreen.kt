@@ -78,7 +78,7 @@ fun ChildExerciseScreen(
     }
     LaunchedEffect(exerciseState.playInstructionRequest) {
         if (exerciseState.playInstructionRequest > 0) {
-            exerciseState.exercise?.let { audio.play(it.audioAssetKey, it.instructionText) }
+            exerciseState.exercise?.let { audio.play(it.audioAssetKey, it.audioUrl, viewModel.mediaToken, it.instructionText) }
         }
     }
     BackHandler(enabled = true) { }
@@ -140,6 +140,7 @@ fun ChildExerciseScreen(
                     enabled = exerciseState.exerciseStatus == ExerciseUiStatus.RUNNING && !exerciseState.isAnswerPending,
                     dimmed = exerciseState.exerciseStatus == ExerciseUiStatus.SHOWN,
                     pendingOptionId = exerciseState.pendingOptionId,
+                    mediaToken = viewModel.mediaToken,
                     onOptionClick = viewModel::submitAnswer
                 )
             } else {

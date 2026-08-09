@@ -43,7 +43,8 @@ data class ExerciseOptionDto(
     val id: String,
     val label: String,
     val imageAssetKey: String,
-    val position: Int
+    val position: Int,
+    val imageUrl: String? = null
 )
 
 @Serializable
@@ -51,7 +52,10 @@ data class ExerciseDto(
     val id: String,
     val instructionText: String,
     val audioAssetKey: String? = null,
-    val options: List<ExerciseOptionDto>
+    val options: List<ExerciseOptionDto>,
+    val title: String? = null,
+    val activityType: String = "SINGLE_CHOICE",
+    val audioUrl: String? = null
 )
 
 @Serializable
@@ -100,7 +104,7 @@ data class ExerciseStateResponse(
     val attemptCount: Int = 0,
     val startedAt: String? = null,
     val currentPosition: Int = 1,
-    val totalExercises: Int = 5,
+    val totalExercises: Int = 0,
     val hasPrevious: Boolean = false,
     val hasNext: Boolean = true,
     val planCompleted: Boolean = false

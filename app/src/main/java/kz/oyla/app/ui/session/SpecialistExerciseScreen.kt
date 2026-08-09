@@ -115,7 +115,7 @@ fun SpecialistExerciseScreen(
                         Text("Задание ${exercise.currentPosition} из ${exercise.totalExercises}", color = OylaNavy, fontSize = 30.sp, fontWeight = FontWeight.Bold)
                         Text(exercise.exercise?.instructionText ?: "Загружаем задание…", color = OylaNavy, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp, bottom = 16.dp))
                         exercise.exercise?.let {
-                            ExerciseCardGrid(exercise = it, selectedAnswer = exercise.latestAnswer, enabled = false, showCorrectMarker = true)
+                            ExerciseCardGrid(exercise = it, selectedAnswer = exercise.latestAnswer, enabled = false, showCorrectMarker = true, mediaToken = viewModel.mediaToken)
                         }
                     }
                 }

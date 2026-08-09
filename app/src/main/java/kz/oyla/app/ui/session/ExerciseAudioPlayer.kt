@@ -8,13 +8,14 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import java.util.Locale
+import android.net.Uri
 
 class ExerciseAudioPlayer(private val context: Context) {
     private var mediaPlayer: MediaPlayer? = null
     private var tts: TextToSpeech? = null
     private var ttsReady = false
 
-    fun play(assetKey: String?, fallbackText: String) {
+    fun play(assetKey: String?, audioUrl: String?, deviceToken: String?, fallbackText: String) {
         val resourceId = assetKey?.let { context.resources.getIdentifier(it, "raw", context.packageName) } ?: 0
         if (resourceId != 0) {
             mediaPlayer?.release()
@@ -23,6 +24,17 @@ class ExerciseAudioPlayer(private val context: Context) {
                 player.start()
             }
             return
+        }
+        if (!audioUrl.isNullOrBlank()) {
+            runCatching {
+                mediaPlayer?.release()
+                mediaPlayer = MediaPlayer().also { player ->
+                    player.setDataSource(context, Uri.parse(audioUrl), deviceToken?.takeIf { it.isNotBlank() }?.let { mapOf("Authorization" to "Bearer $it") } ?: emptyMap())
+                    player.setOnPreparedListener { it.start() }
+                    player.setOnCompletionListener { it.release(); if (mediaPlayer === it) mediaPlayer = null }
+                    player.prepareAsync()
+                }
+            }.onSuccess { return }
         }
         val player = tts ?: TextToSpeech(context.applicationContext) { status ->
             ttsReady = status == TextToSpeech.SUCCESS

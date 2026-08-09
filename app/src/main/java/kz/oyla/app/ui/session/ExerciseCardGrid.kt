@@ -26,11 +26,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kz.oyla.app.ui.theme.OylaBlue
 import kz.oyla.app.ui.theme.OylaNavy
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 
 @Composable
 fun ExerciseCardGrid(
@@ -40,6 +43,7 @@ fun ExerciseCardGrid(
     dimmed: Boolean = false,
     showCorrectMarker: Boolean = false,
     pendingOptionId: String? = null,
+    mediaToken: String? = null,
     onOptionClick: (String) -> Unit = {}
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.fillMaxSize()) {
@@ -64,12 +68,7 @@ fun ExerciseCardGrid(
                     ) {
                         Box(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 10.dp)) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxSize()) {
-                                Image(
-                                    painter = painterResource(exerciseDrawableFor(option.imageAssetKey)),
-                                    contentDescription = option.label,
-                                    contentScale = ContentScale.Fit,
-                                    modifier = Modifier.weight(1f).fillMaxWidth().padding(top = 4.dp)
-                                )
+                                ExerciseOptionImage(option.image, option.label, mediaToken, Modifier.weight(1f).fillMaxWidth().padding(top = 4.dp))
                                 Text(option.label, color = OylaNavy, fontSize = 25.sp, fontWeight = FontWeight.Bold)
                                 Spacer(Modifier.height(4.dp))
                             }
@@ -91,6 +90,21 @@ fun ExerciseCardGrid(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ExerciseOptionImage(image: ExerciseImage, label: String, mediaToken: String?, modifier: Modifier) {
+    when (image) {
+        is ExerciseImage.LocalAsset -> Image(painter = painterResource(exerciseDrawableFor(image.key)), contentDescription = label, contentScale = ContentScale.Fit, modifier = modifier)
+        is ExerciseImage.RemoteAsset -> {
+            val context = LocalContext.current
+            val request = ImageRequest.Builder(context).data(image.url).crossfade(true).apply {
+                mediaToken?.takeIf { it.isNotBlank() }?.let { addHeader("Authorization", "Bearer $it") }
+                placeholder(exerciseDrawableFor("")); error(exerciseDrawableFor(""))
+            }.build()
+            AsyncImage(model = request, contentDescription = label, contentScale = ContentScale.Fit, modifier = modifier)
         }
     }
 }

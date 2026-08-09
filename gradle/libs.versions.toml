@@ -21,6 +21,7 @@ logback = "1.5.18"
 jwt = "4.5.0"
 jbcrypt = "0.4"
 testcontainers = "1.21.4"
+coil = "2.7.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -68,6 +69,7 @@ logback-classic = { group = "ch.qos.logback", name = "logback-classic", version.
 java-jwt = { group = "com.auth0", name = "java-jwt", version.ref = "jwt" }
 jbcrypt = { group = "org.mindrot", name = "jbcrypt", version.ref = "jbcrypt" }
 testcontainers-postgresql = { group = "org.testcontainers", name = "postgresql", version.ref = "testcontainers" }
+coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

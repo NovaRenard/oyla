@@ -35,7 +35,8 @@ data class SpecialistSessionUiState(
 
 class SpecialistSessionViewModel(
     private val repository: SessionRepository,
-    private val webSocketClient: OylaWebSocketClient
+    private val webSocketClient: OylaWebSocketClient,
+    val mediaToken: String? = null
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(SpecialistSessionUiState())
     val uiState = _uiState.asStateFlow()
@@ -292,8 +293,8 @@ class SpecialistSessionViewModel(
 }
 
 class SpecialistSessionViewModelFactory(
-    private val repository: SessionRepository, private val webSocketClient: OylaWebSocketClient
+    private val repository: SessionRepository, private val webSocketClient: OylaWebSocketClient, private val mediaToken: String? = null
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T = SpecialistSessionViewModel(repository, webSocketClient) as T
+    override fun <T : ViewModel> create(modelClass: Class<T>): T = SpecialistSessionViewModel(repository, webSocketClient, mediaToken) as T
 }

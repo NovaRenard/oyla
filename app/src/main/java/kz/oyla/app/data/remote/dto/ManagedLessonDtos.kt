@@ -27,10 +27,19 @@ import kz.oyla.app.domain.model.DeviceRole
     val isOnline: Boolean
 )
 
+@Serializable data class DeviceLessonTemplate(
+    val id: String,
+    val name: String,
+    val description: String? = null,
+    val ownership: String,
+    val exerciseCount: Int
+)
+
 @Serializable data class CreateDeviceLessonRequest(
     val specialistId: String,
     val childId: String,
-    val childDeviceId: String
+    val childDeviceId: String,
+    val lessonTemplateId: String = "00000000-0000-0000-0000-000000000201"
 )
 
 @Serializable data class DeviceLessonResponse(
@@ -42,7 +51,9 @@ import kz.oyla.app.domain.model.DeviceRole
     val childDeviceId: String,
     val status: String,
     val sessionToken: String,
-    val startedAt: String
+    val startedAt: String,
+    val templateName: String? = null,
+    val exerciseCount: Int = 0
 )
 
 @Serializable data class ChildLessonAssignmentResponse(

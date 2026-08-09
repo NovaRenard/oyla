@@ -4,6 +4,12 @@ import kz.oyla.app.data.remote.SocketConnectionState
 import kz.oyla.app.data.remote.dto.AnswerExerciseResponse
 import kz.oyla.app.data.remote.dto.ExerciseDto
 import kz.oyla.app.data.remote.dto.ExerciseStateResponse
+import kz.oyla.app.BuildConfig
+
+sealed interface ExerciseImage {
+    data class LocalAsset(val key: String) : ExerciseImage
+    data class RemoteAsset(val url: String) : ExerciseImage
+}
 
 enum class ExerciseUiStatus { PENDING, SHOWN, RUNNING, COMPLETED }
 
@@ -11,15 +17,17 @@ data class ExerciseOptionUiModel(
     val id: String,
     val label: String,
     val imageAssetKey: String,
-    val position: Int
-)
+    val position: Int,
+    val imageUrl: String? = null
+) { val image: ExerciseImage get() = imageUrl?.let(ExerciseImage::RemoteAsset) ?: ExerciseImage.LocalAsset(imageAssetKey) }
 
 data class ExerciseUiModel(
     val id: String,
     val instructionText: String,
     val audioAssetKey: String?,
     val options: List<ExerciseOptionUiModel>,
-    val correctOptionId: String? = null
+    val correctOptionId: String? = null,
+    val audioUrl: String? = null
 )
 
 data class AnswerUiModel(
@@ -41,7 +49,7 @@ data class ExerciseUiState(
     val attemptCount: Int = 0,
     val startedAt: String? = null,
     val currentPosition: Int = 1,
-    val totalExercises: Int = 5,
+    val totalExercises: Int = 0,
     val hasNext: Boolean = false,
     val planCompleted: Boolean = false,
     val elapsedMillis: Long = 0,
@@ -58,8 +66,8 @@ internal fun String.toExerciseUiStatus(): ExerciseUiStatus = runCatching { Exerc
 
 internal fun ExerciseDto.toUi(correctOptionId: String? = null) = ExerciseUiModel(
     id = id, instructionText = instructionText, audioAssetKey = audioAssetKey,
-    options = options.sortedBy { it.position }.map { ExerciseOptionUiModel(it.id, it.label, it.imageAssetKey, it.position) },
-    correctOptionId = correctOptionId
+    options = options.sortedBy { it.position }.map { ExerciseOptionUiModel(it.id, it.label, it.imageAssetKey, it.position, it.imageUrl.toAbsoluteMediaUrl()) },
+    correctOptionId = correctOptionId, audioUrl = audioUrl.toAbsoluteMediaUrl()
 )
 
 internal fun AnswerExerciseResponse.toUi() = AnswerUiModel(
@@ -101,3 +109,7 @@ internal fun ExerciseUiState.canMoveToNext() =
 
 internal fun ExerciseUiState.canOpenSummary() =
     exerciseStatus == ExerciseUiStatus.COMPLETED && currentPosition == totalExercises && !isCommandLoading
+
+private fun String?.toAbsoluteMediaUrl(): String? = this?.let { url ->
+    if (url.startsWith("http://") || url.startsWith("https://")) url else "${BuildConfig.API_BASE_URL.trimEnd('/')}$url"
+}

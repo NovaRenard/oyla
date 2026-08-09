@@ -45,6 +45,7 @@ import kz.oyla.app.ui.lesson.LessonConfirmationScreen
 import kz.oyla.app.ui.lesson.ManagedLessonLaunchViewModel
 import kz.oyla.app.ui.lesson.ManagedLessonLaunchViewModelFactory
 import kz.oyla.app.ui.lesson.SpecialistSelectionScreen
+import kz.oyla.app.ui.lesson.LessonTemplateSelectionScreen
 
 @Composable
 fun OylaNavGraph(
@@ -61,10 +62,10 @@ fun OylaNavGraph(
     val navController = rememberNavController()
     val scope = rememberCoroutineScope()
     val specialistViewModel: SpecialistSessionViewModel = viewModel(
-        factory = remember { SpecialistSessionViewModelFactory(sessionRepository, webSocketClient) }
+        factory = remember { SpecialistSessionViewModelFactory(sessionRepository, webSocketClient, deviceToken) }
     )
     val childViewModel: ChildSessionViewModel = viewModel(
-        factory = remember { ChildSessionViewModelFactory(sessionRepository, webSocketClient) }
+        factory = remember { ChildSessionViewModelFactory(sessionRepository, webSocketClient, deviceToken) }
     )
     val lessonLaunchViewModel: ManagedLessonLaunchViewModel = viewModel(
         factory = remember { ManagedLessonLaunchViewModelFactory(deviceGateway, deviceToken, sessionRepository, devicePreferences) }
@@ -224,6 +225,13 @@ fun OylaNavGraph(
             }
             composable(OylaDestination.SELECT_CHILD_DEVICE.route) {
                 ChildDeviceSelectionScreen(
+                    viewModel = lessonLaunchViewModel,
+                    onNext = { navController.navigate(OylaDestination.SELECT_LESSON_TEMPLATE.route) },
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable(OylaDestination.SELECT_LESSON_TEMPLATE.route) {
+                LessonTemplateSelectionScreen(
                     viewModel = lessonLaunchViewModel,
                     onNext = { navController.navigate(OylaDestination.CONFIRM_LESSON.route) },
                     onBack = { navController.popBackStack() }

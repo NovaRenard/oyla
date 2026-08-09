@@ -31,6 +31,7 @@ import kz.oyla.app.data.remote.dto.AvailableChildDevice
 import kz.oyla.app.data.remote.dto.ChildLessonAssignmentResponse
 import kz.oyla.app.data.remote.dto.CreateDeviceLessonRequest
 import kz.oyla.app.data.remote.dto.DeviceLessonResponse
+import kz.oyla.app.data.remote.dto.DeviceLessonTemplate
 import kz.oyla.app.data.remote.dto.SaasErrorResponse
 
 interface DeviceAuthGateway {
@@ -40,6 +41,7 @@ interface DeviceAuthGateway {
     suspend fun children(deviceToken: String): NetworkResult<List<DeviceCatalogChild>> = NetworkResult.HttpError(501, "NOT_IMPLEMENTED", "Недоступно")
     suspend fun specialists(deviceToken: String): NetworkResult<List<DeviceCatalogSpecialist>> = NetworkResult.HttpError(501, "NOT_IMPLEMENTED", "Недоступно")
     suspend fun availableChildDevices(deviceToken: String): NetworkResult<List<AvailableChildDevice>> = NetworkResult.HttpError(501, "NOT_IMPLEMENTED", "Недоступно")
+    suspend fun lessonTemplates(deviceToken: String): NetworkResult<List<DeviceLessonTemplate>> = NetworkResult.HttpError(501, "NOT_IMPLEMENTED", "Недоступно")
     suspend fun createLesson(deviceToken: String, request: CreateDeviceLessonRequest): NetworkResult<DeviceLessonResponse> = NetworkResult.HttpError(501, "NOT_IMPLEMENTED", "Недоступно")
     suspend fun currentChildAssignment(deviceToken: String): NetworkResult<ChildLessonAssignmentResponse?> = NetworkResult.HttpError(501, "NOT_IMPLEMENTED", "Недоступно")
     suspend fun currentSpecialistLesson(deviceToken: String): NetworkResult<DeviceLessonResponse?> = NetworkResult.HttpError(501, "NOT_IMPLEMENTED", "Недоступно")
@@ -81,6 +83,10 @@ class DeviceAuthApiClient(
 
     override suspend fun availableChildDevices(deviceToken: String): NetworkResult<List<AvailableChildDevice>> = authenticated(deviceToken) {
         getWithRetry("/api/v1/device-lessons/available-child-devices")
+    }
+
+    override suspend fun lessonTemplates(deviceToken: String): NetworkResult<List<DeviceLessonTemplate>> = authenticated(deviceToken) {
+        getWithRetry("/api/v1/device-data/lesson-templates")
     }
 
     override suspend fun createLesson(deviceToken: String, request: CreateDeviceLessonRequest): NetworkResult<DeviceLessonResponse> = authenticated(deviceToken) {

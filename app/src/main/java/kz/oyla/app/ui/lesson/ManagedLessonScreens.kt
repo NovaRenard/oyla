@@ -81,6 +81,22 @@ fun ChildDeviceSelectionScreen(viewModel: ManagedLessonLaunchViewModel, onNext: 
 }
 
 @Composable
+fun LessonTemplateSelectionScreen(viewModel: ManagedLessonLaunchViewModel, onNext: () -> Unit, onBack: () -> Unit) {
+    val state by viewModel.uiState.collectAsState(); LaunchedEffect(Unit) { viewModel.loadCatalog() }
+    var search by remember { mutableStateOf("") }
+    SelectionScaffold(title = "Выберите занятие", subtitle = "Доступны шаблоны Oyla и вашего центра", loading = state.isLoading, error = state.errorMessage, onBack = onBack) {
+        TextField(value = search, onValueChange = { search = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Поиск занятия") })
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+            items(state.templates.filter { "${it.name} ${it.description.orEmpty()}".contains(search, ignoreCase = true) }, key = { it.id }) { template ->
+                val source = if (template.ownership == "SYSTEM") "Oyla · " else "Центр · "
+                SelectionCard(template.name, "$source${template.exerciseCount} упражнений", template.id == state.lessonTemplateId) { viewModel.selectTemplate(template.id) }
+            }
+        }
+        ContinueButton(enabled = state.lessonTemplateId != null, onClick = onNext)
+    }
+}
+
+@Composable
 fun LessonConfirmationScreen(viewModel: ManagedLessonLaunchViewModel, onBack: () -> Unit, onStarted: (DeviceLessonResponse) -> Unit) {
     val state by viewModel.uiState.collectAsState()
     LaunchedEffect(state.createdLesson?.sessionId) { state.createdLesson?.let { lesson -> viewModel.consumeCreatedLesson(); onStarted(lesson) } }
@@ -90,10 +106,10 @@ fun LessonConfirmationScreen(viewModel: ManagedLessonLaunchViewModel, onBack: ()
             state.specialist?.specialization?.let { Text(it, color = OylaTextMuted) }
             Text("Ребёнок: ${state.child?.firstName.orEmpty()} ${state.child?.lastName.orEmpty()}")
             Text("Планшет: ${state.childDevice?.name.orEmpty()}")
-            Text("Занятие: Базовое занятие Oyla · 5 упражнений", fontWeight = FontWeight.Bold)
+            Text("Занятие: ${state.template?.name.orEmpty()} · ${state.template?.exerciseCount ?: 0} упражнений", fontWeight = FontWeight.Bold)
         } }
         Spacer(Modifier.height(8.dp))
-        Button(enabled = !state.isLoading && state.specialistId != null && state.childId != null && state.childDeviceId != null, onClick = viewModel::createLesson, modifier = Modifier.fillMaxWidth()) { Text(if (state.isLoading) "Запускаем…" else "Начать занятие") }
+        Button(enabled = !state.isLoading && state.specialistId != null && state.childId != null && state.childDeviceId != null && state.lessonTemplateId != null, onClick = viewModel::createLesson, modifier = Modifier.fillMaxWidth()) { Text(if (state.isLoading) "Запускаем…" else "Начать занятие") }
     }
 }
 

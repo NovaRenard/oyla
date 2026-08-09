@@ -34,7 +34,8 @@ data class ChildSessionUiState(
 
 class ChildSessionViewModel(
     private val repository: SessionRepository,
-    private val webSocketClient: OylaWebSocketClient
+    private val webSocketClient: OylaWebSocketClient,
+    val mediaToken: String? = null
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ChildSessionUiState())
     val uiState = _uiState.asStateFlow()
@@ -272,8 +273,8 @@ class ChildSessionViewModel(
 }
 
 class ChildSessionViewModelFactory(
-    private val repository: SessionRepository, private val webSocketClient: OylaWebSocketClient
+    private val repository: SessionRepository, private val webSocketClient: OylaWebSocketClient, private val mediaToken: String? = null
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T = ChildSessionViewModel(repository, webSocketClient) as T
+    override fun <T : ViewModel> create(modelClass: Class<T>): T = ChildSessionViewModel(repository, webSocketClient, mediaToken) as T
 }

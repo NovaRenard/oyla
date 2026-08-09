@@ -14,6 +14,7 @@ enum class OylaDestination(val route: String) {
     SELECT_SPECIALIST("select_specialist"),
     SELECT_CHILD("select_child"),
     SELECT_CHILD_DEVICE("select_child_device"),
+    SELECT_LESSON_TEMPLATE("select_lesson_template"),
     CONFIRM_LESSON("confirm_lesson"),
     SPECIALIST_WAITING("specialist_waiting"),
     CHILD_WAITING("child_waiting"),
