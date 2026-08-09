@@ -34,7 +34,11 @@ import kz.oyla.server.repository.SessionRepository
 import kz.oyla.server.repository.SaasRepository
 import kz.oyla.server.repository.DatabaseSaasRepository
 import kz.oyla.server.repository.InMemorySaasRepository
+import kz.oyla.server.repository.ContentRepository
+import kz.oyla.server.repository.DatabaseContentRepository
+import kz.oyla.server.repository.InMemoryContentRepository
 import kz.oyla.server.routes.healthRoutes
+import kz.oyla.server.routes.contentRoutes
 import kz.oyla.server.routes.sessionRoutes
 import kz.oyla.server.routes.sessionWebSocketRoutes
 import kz.oyla.server.routes.saasRoutes
@@ -45,7 +49,9 @@ import kz.oyla.server.service.ExerciseService
 import kz.oyla.server.service.SaasConfig
 import kz.oyla.server.service.SaasService
 import kz.oyla.server.service.LessonService
+import kz.oyla.server.service.ContentService
 import kz.oyla.server.util.ActivationRateLimiter
+import kz.oyla.server.storage.LocalMediaStorage
 
 fun main(args: Array<String>) {
     if (args.isNotEmpty()) {
@@ -69,6 +75,7 @@ fun Application.module(
     ),
     exerciseRepository: ExerciseRepository? = null,
     saasRepository: SaasRepository? = null,
+    contentRepository: ContentRepository? = null,
     saasConfig: SaasConfig = SaasConfig.fromEnvironment(),
     activationRateLimiter: ActivationRateLimiter? = null
 ) {
@@ -92,7 +99,9 @@ fun Application.module(
     val eventHub = SessionEventHub(json)
     val tenants = saasRepository ?: if (repository is InMemorySessionRepository) InMemorySaasRepository() else DatabaseSaasRepository()
     val saasService = SaasService(tenants, saasConfig, clock = clock)
-    val lessonService = LessonService(tenants, repository, exerciseService, saasConfig, clock = clock)
+    val content = contentRepository ?: if (repository is InMemorySessionRepository) InMemoryContentRepository() else DatabaseContentRepository()
+    val contentService = ContentService(content, tenants, LocalMediaStorage(), clock)
+    val lessonService = LessonService(tenants, repository, exerciseService, contentService, saasConfig, clock = clock)
     val limiter = activationRateLimiter ?: ActivationRateLimiter(clock)
 
     install(CallLogging) {
@@ -129,7 +138,8 @@ fun Application.module(
         healthRoutes()
         sessionRoutes(sessionService, exerciseService, eventHub, lessonService)
         sessionWebSocketRoutes(sessionService, exerciseService, eventHub, json)
-        saasRoutes(saasService, lessonService, limiter)
+        contentRoutes(saasService, contentService)
+        saasRoutes(saasService, lessonService, contentService, limiter)
     }
 }
 
@@ -138,5 +148,6 @@ private fun io.ktor.server.application.ApplicationCall.isSaasPath(): Boolean = r
         it.startsWith("/api/v1/devices") || it.startsWith("/api/v1/device-auth") ||
         it.startsWith("/api/v1/children") || it.startsWith("/api/v1/specialists") ||
         it.startsWith("/api/v1/device-data") || it.startsWith("/api/v1/lessons") ||
-        it.startsWith("/api/v1/device-lessons")
+        it.startsWith("/api/v1/device-lessons") || it.startsWith("/api/v1/exercises") ||
+        it.startsWith("/api/v1/lesson-templates") || it.startsWith("/api/v1/media")
 }

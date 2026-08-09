@@ -9,6 +9,7 @@ import kz.oyla.server.model.SessionStatus
 class InMemorySessionRepository : SessionRepository {
     private val sessions = linkedMapOf<UUID, SessionRecord>()
     private val participants = linkedMapOf<UUID, LessonParticipantRecord>()
+    private val managedExerciseCounts = linkedMapOf<UUID, Int>()
 
     override suspend fun isConnectionCodeActive(code: String, now: Instant): Boolean = synchronized(sessions) {
         sessions.values.any {
@@ -87,12 +88,13 @@ class InMemorySessionRepository : SessionRepository {
         }
     }
 
-    override suspend fun createManagedSession(session: SessionRecord, participant: LessonParticipantRecord, exerciseIds: List<String>): Boolean = synchronized(sessions) {
-        if (!session.isManaged || exerciseIds.size != 5 || sessions.values.any {
+    override suspend fun createManagedSession(session: SessionRecord, participant: LessonParticipantRecord, exercises: List<SessionExerciseRecord>): Boolean = synchronized(sessions) {
+        if (!session.isManaged || exercises.size !in 1..30 || exercises.any { it.snapshot == null } || sessions.values.any {
                 it.connectionCode == session.connectionCode && it.status in setOf(SessionStatus.WAITING_FOR_CHILD, SessionStatus.READY) && it.expiresAt > session.createdAt
             }) return@synchronized false
         sessions[session.id] = session
         participants[participant.id] = participant
+        managedExerciseCounts[session.id] = exercises.size
         true
     }
 
@@ -137,6 +139,6 @@ class InMemorySessionRepository : SessionRepository {
     }
 
     private fun managedLessons(): List<ManagedLessonRecord> = sessions.values.filter { it.isManaged }.mapNotNull { session ->
-        participants.values.singleOrNull { it.sessionId == session.id }?.let { ManagedLessonRecord(session, it) }
+        participants.values.singleOrNull { it.sessionId == session.id }?.let { ManagedLessonRecord(session, it, managedExerciseCounts[session.id] ?: 0) }
     }
 }

@@ -102,19 +102,21 @@ An ACTIVE or BLOCKED `device_uid` cannot be claimed by another center; the code 
 
 Follow logs with the `logs -f` command above. To update, pull the intended revision, run `config`, then `build` and `up -d`; verify health and smoke tests. Roll back by checking out the previous known-good revision, rebuilding, and starting it again. Do not roll back a database migration without a tested restore plan.
 
-Create a custom-format backup (Git Bash/WSL/Linux):
+Create a complete backup (Git Bash/WSL/Linux):
 
 ```bash
 chmod +x deploy/scripts/*.sh
 deploy/scripts/backup-db.sh
 ```
 
-Backups are timestamped under `/srv/apps/oyla/backups/` by default (or under `OYLA_BACKUP_DIR` if set). For restore, stop app traffic (`docker compose ... stop reverse-proxy oyla-server` or use maintenance mode), then explicitly confirm:
+Backups are timestamped under `/srv/apps/oyla/backups/` by default (or under `OYLA_BACKUP_DIR` if set). Each run produces both PostgreSQL (`.dump`) and `oyla-media-data` (`-media.tar.gz`): `pg_dump` never contains uploaded pictures or audio. Keep each pair together and test restores off-production. For restore, stop app traffic (`docker compose ... stop reverse-proxy oyla-server` or use maintenance mode), then explicitly confirm the database restore:
 
 ```bash
 deploy/scripts/restore-db.sh --confirm /srv/apps/oyla/backups/oyla-YYYYMMDDTHHMMSSZ.dump
 docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod up -d
 ```
+
+Media restore is intentionally manual and not performed by `restore-db.sh`: inspect the target volume and archive first, then extract the matching `-media.tar.gz` into `oyla-media-data` during a maintenance window. Do not overwrite a live media volume without a separately verified backup.
 
 ## 6. Deployment smoke test
 

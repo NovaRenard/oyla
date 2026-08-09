@@ -34,9 +34,10 @@ import kz.oyla.server.model.dto.CreateDeviceLessonRequest
 import kz.oyla.server.service.ApiException
 import kz.oyla.server.service.SaasService
 import kz.oyla.server.service.LessonService
+import kz.oyla.server.service.ContentService
 import kz.oyla.server.util.ActivationRateLimiter
 
-fun Route.saasRoutes(service: SaasService, lessons: LessonService, activationRateLimiter: ActivationRateLimiter) {
+fun Route.saasRoutes(service: SaasService, lessons: LessonService, content: ContentService, activationRateLimiter: ActivationRateLimiter) {
     route("/api/v1/auth") {
         post("/register-center") {
             if (!service.publicRegistrationAllowed) throw ApiException.registrationDisabled()
@@ -199,6 +200,10 @@ fun Route.saasRoutes(service: SaasService, lessons: LessonService, activationRat
         route("/api/v1/device-data") {
             get("/children") { call.respond(service.deviceChildren(call.devicePrincipal().device)) }
             get("/specialists") { call.respond(service.deviceSpecialists(call.devicePrincipal().device)) }
+            get("/lesson-templates") {
+                val device = call.devicePrincipal().device
+                call.respond(content.deviceTemplates(service.specialistDeviceCenter(device)))
+            }
         }
         route("/api/v1/device-lessons") {
             post { call.respond(HttpStatusCode.Created, lessons.create(call.devicePrincipal().device, call.receive<CreateDeviceLessonRequest>())) }

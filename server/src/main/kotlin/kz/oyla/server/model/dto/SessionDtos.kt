@@ -66,7 +66,7 @@ data class StateSnapshotEvent(
     val attemptCount: Int = 0,
     val startedAt: String? = null,
     val currentPosition: Int = 1,
-    val totalExercises: Int = 5,
+    val totalExercises: Int = 0,
     val hasPrevious: Boolean = false,
     val hasNext: Boolean = true,
     val planCompleted: Boolean = false
@@ -101,7 +101,7 @@ data class ExerciseShownEvent(
     val exerciseStatus: ExerciseStatus,
     val correctOptionId: String? = null,
     val currentPosition: Int = 1,
-    val totalExercises: Int = 5
+    val totalExercises: Int = 0
 )
 
 @Serializable
@@ -112,7 +112,7 @@ data class ExerciseStartedEvent(
     val exerciseStatus: ExerciseStatus,
     val startedAt: String,
     val currentPosition: Int = 1,
-    val totalExercises: Int = 5
+    val totalExercises: Int = 0
 )
 
 @Serializable

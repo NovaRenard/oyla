@@ -37,6 +37,9 @@ services:
       BCRYPT_LOG_ROUNDS: ${BCRYPT_LOG_ROUNDS:?Set BCRYPT_LOG_ROUNDS}
       OYLA_COOKIE_SECURE: "true"
       ALLOW_PUBLIC_REGISTRATION: "false"
+      MEDIA_STORAGE_PATH: /data/media
+    volumes:
+      - oyla-media-data:/data/media
     depends_on:
       oyla-db:
         condition: service_healthy
@@ -111,6 +114,8 @@ services:
 
 volumes:
   oyla-postgres-data:
+  oyla-media-data:
+    name: oyla-media-data
   oyla-caddy-data:
   oyla-caddy-config:
 

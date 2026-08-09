@@ -4,6 +4,8 @@ import java.sql.Connection
 import java.sql.ResultSet
 import java.time.Instant
 import java.util.UUID
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kz.oyla.server.model.DeviceRole
@@ -69,9 +71,9 @@ class DatabaseSessionRepository : SessionRepository {
         true
     }
 
-    override suspend fun createManagedSession(session: SessionRecord, participant: LessonParticipantRecord, exerciseIds: List<String>): Boolean = database {
-        require(session.isManaged && session.centerId != null && session.specialistId != null && session.specialistDeviceUuid != null && session.startedAt != null)
-        if (exerciseIds.size != 5) return@database false
+    override suspend fun createManagedSession(session: SessionRecord, participant: LessonParticipantRecord, exercises: List<SessionExerciseRecord>): Boolean = database {
+        require(session.isManaged && session.centerId != null && session.specialistId != null && session.specialistDeviceUuid != null && session.startedAt != null && session.lessonTemplateId != null && session.templateNameSnapshot != null)
+        if (exercises.size !in 1..30 || exercises.map { it.position } != (1..exercises.size).toList() || exercises.count { it.isCurrent } != 1 || exercises.any { it.snapshot == null }) return@database false
         // Lock both device rows in a stable order before checking availability. This closes the
         // race between two specialist tablets attempting to claim the same child tablet.
         connection.prepareStatement("SELECT id FROM devices WHERE id IN (?, ?) ORDER BY id FOR UPDATE").use { statement ->
@@ -90,8 +92,8 @@ class DatabaseSessionRepository : SessionRepository {
         connection.prepareStatement(
             """INSERT INTO sessions (
                 id, connection_code, child_name, status, specialist_device_id, specialist_token, child_device_id, child_token,
-                created_at, expires_at, connected_at, completed_at, center_id, specialist_id, specialist_device_uuid, started_at, is_managed
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)
+                created_at, expires_at, connected_at, completed_at, center_id, specialist_id, specialist_device_uuid, started_at, is_managed, lesson_template_id, template_name_snapshot
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, ?, ?)
             ON CONFLICT DO NOTHING"""
         ).use { statement ->
             statement.setObject(1, session.id); statement.setString(2, session.connectionCode); statement.setString(3, session.childName)
@@ -100,6 +102,7 @@ class DatabaseSessionRepository : SessionRepository {
             statement.setTimestamp(10, java.sql.Timestamp.from(session.expiresAt)); statement.setTimestamp(11, session.connectedAt?.let(java.sql.Timestamp::from))
             statement.setTimestamp(12, session.completedAt?.let(java.sql.Timestamp::from)); statement.setObject(13, session.centerId)
             statement.setObject(14, session.specialistId); statement.setObject(15, session.specialistDeviceUuid); statement.setTimestamp(16, java.sql.Timestamp.from(session.startedAt))
+            statement.setObject(17, session.lessonTemplateId); statement.setString(18, session.templateNameSnapshot)
             if (statement.executeUpdate() != 1) return@database false
         }
         connection.prepareStatement(
@@ -111,12 +114,14 @@ class DatabaseSessionRepository : SessionRepository {
         }
         connection.prepareStatement(
             """INSERT INTO session_exercises
-               (id, session_id, exercise_id, status, shown_at, started_at, completed_at, created_at, position, is_current)
-               VALUES (?, ?, ?, 'PENDING', NULL, NULL, NULL, ?, ?, ?)"""
+               (id, session_id, exercise_id, status, shown_at, started_at, completed_at, created_at, position, is_current, source_exercise_id, activity_type, snapshot_json)
+               VALUES (?, ?, ?, 'PENDING', NULL, NULL, NULL, ?, ?, ?, ?, ?, ?::jsonb)"""
         ).use { statement ->
-            exerciseIds.forEachIndexed { index, exerciseId ->
-                statement.setObject(1, UUID.randomUUID()); statement.setObject(2, session.id); statement.setString(3, exerciseId)
-                statement.setTimestamp(4, java.sql.Timestamp.from(session.createdAt)); statement.setInt(5, index + 1); statement.setBoolean(6, index == 0); statement.addBatch()
+            exercises.forEach { exercise ->
+                val snapshot = checkNotNull(exercise.snapshot)
+                statement.setObject(1, exercise.id); statement.setObject(2, session.id); statement.setString(3, exercise.exerciseId)
+                statement.setTimestamp(4, java.sql.Timestamp.from(session.createdAt)); statement.setInt(5, exercise.position); statement.setBoolean(6, exercise.isCurrent)
+                statement.setObject(7, UUID.fromString(snapshot.sourceExerciseId)); statement.setString(8, snapshot.activityType.name); statement.setString(9, json.encodeToString(snapshot)); statement.addBatch()
             }
             statement.executeBatch()
         }
@@ -250,7 +255,8 @@ class DatabaseSessionRepository : SessionRepository {
 
     override suspend fun currentChildAssignment(deviceId: UUID): ManagedLessonRecord? = database {
         connection.findManagedLesson(
-            """SELECT s.*, p.id AS participant_id, p.child_id AS participant_child_id, p.device_id AS participant_device_id, p.created_at AS participant_created_at
+            """SELECT s.*, p.id AS participant_id, p.child_id AS participant_child_id, p.device_id AS participant_device_id, p.created_at AS participant_created_at,
+                      (SELECT COUNT(*) FROM session_exercises se WHERE se.session_id = s.id) AS exercise_count
                FROM sessions s JOIN lesson_participants p ON p.session_id = s.id
                WHERE s.is_managed = TRUE AND p.device_id = ? AND s.status IN ('WAITING_FOR_CHILD', 'READY')
                ORDER BY s.started_at DESC LIMIT 1"""
@@ -259,7 +265,8 @@ class DatabaseSessionRepository : SessionRepository {
 
     override suspend fun currentSpecialistLesson(deviceId: UUID): ManagedLessonRecord? = database {
         connection.findManagedLesson(
-            """SELECT s.*, p.id AS participant_id, p.child_id AS participant_child_id, p.device_id AS participant_device_id, p.created_at AS participant_created_at
+            """SELECT s.*, p.id AS participant_id, p.child_id AS participant_child_id, p.device_id AS participant_device_id, p.created_at AS participant_created_at,
+                      (SELECT COUNT(*) FROM session_exercises se WHERE se.session_id = s.id) AS exercise_count
                FROM sessions s JOIN lesson_participants p ON p.session_id = s.id
                WHERE s.is_managed = TRUE AND s.specialist_device_uuid = ? AND s.status IN ('WAITING_FOR_CHILD', 'READY')
                ORDER BY s.started_at DESC LIMIT 1"""
@@ -272,7 +279,8 @@ class DatabaseSessionRepository : SessionRepository {
         if (specialistId != null) clauses += "s.specialist_id = ?"
         if (status != null) clauses += "s.status = ?"
         connection.prepareStatement(
-            """SELECT s.*, p.id AS participant_id, p.child_id AS participant_child_id, p.device_id AS participant_device_id, p.created_at AS participant_created_at
+            """SELECT s.*, p.id AS participant_id, p.child_id AS participant_child_id, p.device_id AS participant_device_id, p.created_at AS participant_created_at,
+                      (SELECT COUNT(*) FROM session_exercises se WHERE se.session_id = s.id) AS exercise_count
                FROM sessions s JOIN lesson_participants p ON p.session_id = s.id
                WHERE ${clauses.joinToString(" AND ")} ORDER BY s.started_at DESC"""
         ).use { statement ->
@@ -284,19 +292,20 @@ class DatabaseSessionRepository : SessionRepository {
 
     override suspend fun getManagedLesson(centerId: UUID, sessionId: UUID): LessonDetailRecord? = database {
         val lesson = connection.findManagedLesson(
-            """SELECT s.*, p.id AS participant_id, p.child_id AS participant_child_id, p.device_id AS participant_device_id, p.created_at AS participant_created_at
+            """SELECT s.*, p.id AS participant_id, p.child_id AS participant_child_id, p.device_id AS participant_device_id, p.created_at AS participant_created_at,
+                      (SELECT COUNT(*) FROM session_exercises se WHERE se.session_id = s.id) AS exercise_count
                FROM sessions s JOIN lesson_participants p ON p.session_id = s.id
                WHERE s.is_managed = TRUE AND s.center_id = ? AND s.id = ?"""
         ) { setObject(1, centerId); setObject(2, sessionId) } ?: return@database null
         val exercises = connection.prepareStatement(
-            """SELECT se.position, se.exercise_id, e.instruction_text, se.status,
+            """SELECT se.position, se.exercise_id, COALESCE(se.snapshot_json ->> 'instructionText', e.instruction_text) AS instruction_text, se.status,
                       COUNT(a.id) AS attempt_count,
                       COUNT(a.id) FILTER (WHERE a.is_correct = FALSE) AS incorrect_attempts,
                       MIN(a.response_time_ms) FILTER (WHERE a.is_correct = TRUE) AS time_to_correct_ms
-               FROM session_exercises se JOIN exercises e ON e.id = se.exercise_id
+               FROM session_exercises se LEFT JOIN exercises e ON e.id = se.exercise_id
                LEFT JOIN attempts a ON a.session_exercise_id = se.id
                WHERE se.session_id = ?
-               GROUP BY se.position, se.exercise_id, e.instruction_text, se.status
+               GROUP BY se.position, se.exercise_id, se.snapshot_json, e.instruction_text, se.status
                ORDER BY se.position"""
         ).use { statement ->
             statement.setObject(1, sessionId); statement.executeQuery().use { result ->
@@ -373,12 +382,15 @@ class DatabaseSessionRepository : SessionRepository {
         ,specialistDeviceUuid = getObject("specialist_device_uuid", UUID::class.java)
         ,startedAt = getTimestamp("started_at")?.toInstant()
         ,isManaged = getBoolean("is_managed")
+        ,lessonTemplateId = getObject("lesson_template_id", UUID::class.java)
+        ,templateNameSnapshot = getString("template_name_snapshot")
     )
 
     private fun ResultSet.toManagedLessonRecord() = ManagedLessonRecord(
         toSessionRecord(),
         LessonParticipantRecord(getObject("participant_id", UUID::class.java), getObject("id", UUID::class.java),
-            getObject("participant_child_id", UUID::class.java), getObject("participant_device_id", UUID::class.java), getTimestamp("participant_created_at").toInstant())
+            getObject("participant_child_id", UUID::class.java), getObject("participant_device_id", UUID::class.java), getTimestamp("participant_created_at").toInstant()),
+        runCatching { getInt("exercise_count") }.getOrDefault(0)
     )
     private fun ResultSet.toLessonExerciseHistory() = LessonExerciseHistoryRecord(
         getInt("position"), getString("exercise_id"), getString("instruction_text"), kz.oyla.server.model.ExerciseStatus.valueOf(getString("status")),
@@ -388,4 +400,6 @@ class DatabaseSessionRepository : SessionRepository {
     private suspend fun <T> database(block: () -> T): T = withContext(Dispatchers.IO) {
         transaction { block() }
     }
+
+    private companion object { val json = Json { encodeDefaults = true; explicitNulls = false } }
 }

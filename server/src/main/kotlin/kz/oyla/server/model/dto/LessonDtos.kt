@@ -4,7 +4,13 @@ import kotlinx.serialization.Serializable
 import kz.oyla.server.model.ExerciseStatus
 import kz.oyla.server.model.SessionStatus
 
-@Serializable data class CreateDeviceLessonRequest(val specialistId: String, val childId: String, val childDeviceId: String)
+@Serializable data class CreateDeviceLessonRequest(
+    val specialistId: String,
+    val childId: String,
+    val childDeviceId: String,
+    /** Keeps previously released specialist tablets compatible while they update. */
+    val lessonTemplateId: String = "00000000-0000-0000-0000-000000000201"
+)
 
 /** This response is device-only: its specialist session token is never exposed through web history APIs. */
 @Serializable data class DeviceLessonResponse(
@@ -16,7 +22,9 @@ import kz.oyla.server.model.SessionStatus
     val childDeviceId: String,
     val status: SessionStatus,
     val sessionToken: String,
-    val startedAt: String
+    val startedAt: String,
+    val templateName: String? = null,
+    val exerciseCount: Int = 0
 )
 
 @Serializable data class ChildLessonAssignmentResponse(
@@ -38,7 +46,8 @@ import kz.oyla.server.model.SessionStatus
     val startedAt: String,
     val completedAt: String? = null,
     val durationMs: Long? = null,
-    val exerciseCount: Int = 5
+    val exerciseCount: Int = 0,
+    val templateName: String? = null
 )
 
 @Serializable data class LessonExerciseDto(

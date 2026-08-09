@@ -26,6 +26,8 @@ import kz.oyla.server.repository.ManagedLessonRecord
 import kz.oyla.server.repository.SaasRepository
 import kz.oyla.server.repository.SessionRecord
 import kz.oyla.server.repository.SessionRepository
+import kz.oyla.server.repository.SessionExerciseRecord
+import kz.oyla.server.model.ExerciseStatus
 import kz.oyla.server.repository.SpecialistListFilter
 import kz.oyla.server.util.CodeGenerator
 
@@ -34,6 +36,7 @@ class LessonService(
     private val tenants: SaasRepository,
     private val sessions: SessionRepository,
     private val exercises: ExerciseService,
+    private val content: ContentService,
     private val config: SaasConfig,
     private val codes: CodeGenerator = CodeGenerator(),
     private val clock: Clock = Clock.systemUTC()
@@ -44,6 +47,7 @@ class LessonService(
         val specialistId = request.specialistId.uuid("Специалист")
         val childId = request.childId.uuid("Ребёнок")
         val childDeviceId = request.childDeviceId.uuid("Детский планшет")
+        val templateId = request.lessonTemplateId.uuid("Шаблон занятия")
         val specialist = tenants.findSpecialist(center.id, specialistId)?.takeIf { it.status == SpecialistStatus.ACTIVE } ?: throw ApiException.specialistNotFound()
         val child = tenants.findChild(center.id, childId)?.takeIf { it.status == ChildStatus.ACTIVE } ?: throw ApiException.childNotFound()
         val childDevice = tenants.findDevice(center.id, childDeviceId)
@@ -52,20 +56,25 @@ class LessonService(
         if (sessions.isManagedDeviceBusy(specialistDevice.id) || sessions.isManagedDeviceBusy(childDevice.id)) {
             throw ApiException.conflict("Один из планшетов уже участвует в активном занятии")
         }
+        val template = content.snapshotTemplate(center.id, templateId)
         val now = clock.instant()
         repeat(50) {
             val session = SessionRecord(
                 id = UUID.randomUUID(), connectionCode = codes.nextConnectionCode(), childName = child.fullName(), status = SessionStatus.READY,
                 specialistDeviceId = specialistDevice.id.toString(), specialistToken = codes.nextAccessToken(), childDeviceId = childDevice.id.toString(),
                 childToken = codes.nextAccessToken(), createdAt = now, expiresAt = now.plus(Duration.ofDays(365)), connectedAt = now, completedAt = null,
-                centerId = center.id, specialistId = specialist.id, specialistDeviceUuid = specialistDevice.id, startedAt = now, isManaged = true
+                centerId = center.id, specialistId = specialist.id, specialistDeviceUuid = specialistDevice.id, startedAt = now, isManaged = true,
+                lessonTemplateId = template.id, templateNameSnapshot = template.name
             )
             val participant = LessonParticipantRecord(UUID.randomUUID(), session.id, child.id, childDevice.id, now)
-            if (sessions.createManagedSession(session, participant, ExerciseService.defaultPlan)) {
-                exercises.ensureDefaultExercisePlan(session.id)
+            val snapshotRows = template.exercises.mapIndexed { index, snapshot ->
+                SessionExerciseRecord(UUID.randomUUID(), session.id, snapshot.sourceExerciseId, ExerciseStatus.PENDING, null, null, null, now, index + 1, index == 0, snapshot)
+            }
+            if (sessions.createManagedSession(session, participant, snapshotRows)) {
+                exercises.ensureSnapshotPlan(snapshotRows)
                 tenants.recordAudit(AuditLogRecord(UUID.randomUUID(), center.id, AuditActorType.DEVICE, specialistDevice.id, "LESSON_CREATED", "LESSON", session.id, "{}", null, now))
                 tenants.recordAudit(AuditLogRecord(UUID.randomUUID(), center.id, AuditActorType.DEVICE, specialistDevice.id, "LESSON_STARTED", "LESSON", session.id, "{}", null, now))
-                return session.toDeviceResponse(specialist.fullName(), child.id, child.fullName())
+                return session.toDeviceResponse(specialist.fullName(), child.id, child.fullName(), template.exercises.size)
             }
         }
         throw ApiException.conflict("Не удалось создать занятие")
@@ -85,7 +94,7 @@ class LessonService(
         if (lesson.session.centerId != active.centerId) return null
         val specialist = tenants.findSpecialist(active.centerId, checkNotNull(lesson.session.specialistId)) ?: return null
         val child = tenants.findChild(active.centerId, lesson.participant.childId) ?: return null
-        return lesson.session.toDeviceResponse(specialist.fullName(), child.id, child.fullName())
+        return lesson.session.toDeviceResponse(specialist.fullName(), child.id, child.fullName(), lesson.exerciseCount)
     }
 
     suspend fun availableChildDevices(device: DeviceRecord): List<DeviceDto> {
@@ -137,9 +146,9 @@ class LessonService(
         val child = tenants.findChild(centerId, record.participant.childId) ?: throw ApiException.notFound("Ребёнок не найден")
         val started = checkNotNull(record.session.startedAt)
         val duration = record.session.completedAt?.let { Duration.between(started, it).toMillis().coerceAtLeast(0) }
-        return LessonDto(record.session.id.toString(), child.id.toString(), child.fullName(), specialist.id.toString(), specialist.fullName(), record.session.status, started.toString(), record.session.completedAt?.toString(), duration)
+        return LessonDto(record.session.id.toString(), child.id.toString(), child.fullName(), specialist.id.toString(), specialist.fullName(), record.session.status, started.toString(), record.session.completedAt?.toString(), duration, record.exerciseCount, record.session.templateNameSnapshot)
     }
-    private fun SessionRecord.toDeviceResponse(specialistName: String, childId: UUID, childName: String) = DeviceLessonResponse(
+    private fun SessionRecord.toDeviceResponse(specialistName: String, childId: UUID, childName: String, exerciseCount: Int) = DeviceLessonResponse(
         sessionId = id.toString(),
         specialistId = checkNotNull(specialistId).toString(),
         specialistName = specialistName,
@@ -148,7 +157,9 @@ class LessonService(
         childDeviceId = checkNotNull(childDeviceId),
         status = status,
         sessionToken = checkNotNull(specialistToken),
-        startedAt = checkNotNull(startedAt).toString()
+        startedAt = checkNotNull(startedAt).toString(),
+        templateName = templateNameSnapshot,
+        exerciseCount = exerciseCount
     )
     private fun DeviceRecord.toDto(now: Instant) = DeviceDto(id.toString(), name, role, status, appVersion, androidVersion, model, lastSeenAt?.toString(), activatedAt?.toString(), lastSeenAt?.isAfter(now.minus(config.onlineWindow)) == true)
     private fun kz.oyla.server.model.ChildRecord.fullName() = listOf(firstName, lastName).filterNotNull().joinToString(" ")

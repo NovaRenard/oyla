@@ -3,6 +3,7 @@ package kz.oyla.server.repository
 import java.time.Instant
 import java.util.UUID
 import kz.oyla.server.model.ExerciseStatus
+import kz.oyla.server.model.ExerciseSnapshot
 
 data class ExerciseRecord(
     val id: String,
@@ -32,7 +33,9 @@ data class SessionExerciseRecord(
     val completedAt: Instant?,
     val createdAt: Instant,
     val position: Int,
-    val isCurrent: Boolean
+    val isCurrent: Boolean,
+    /** Null only for legacy rows that use the old exercise tables. */
+    val snapshot: ExerciseSnapshot? = null
 )
 
 data class ExerciseAttemptRecord(

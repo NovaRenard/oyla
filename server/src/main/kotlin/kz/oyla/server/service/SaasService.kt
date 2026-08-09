@@ -448,6 +448,15 @@ class SaasService(
         return repository.listSpecialists(active.centerId, SpecialistListFilter(SpecialistStatus.ACTIVE)).map { it.toDto() }
     }
 
+    /** Keeps device-data endpoints subject to the same revocation and centre-status checks. */
+    suspend fun specialistDeviceCenter(device: DeviceRecord): UUID {
+        val active = requireActiveDevice(device)
+        requireSpecialistDevice(active)
+        return active.centerId
+    }
+
+    suspend fun deviceContentCenter(device: DeviceRecord): UUID = requireActiveDevice(device).centerId
+
     suspend fun requireCenterContext(userId: UUID, activeCenterId: UUID?, roles: Set<MembershipRole> = emptySet()): CenterContext {
         val user = requireActiveUser(userId)
         val centerId = activeCenterId ?: throw ApiException.membershipNotFound()

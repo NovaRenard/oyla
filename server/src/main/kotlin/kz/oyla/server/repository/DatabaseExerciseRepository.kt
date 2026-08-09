@@ -4,6 +4,8 @@ import java.sql.Connection
 import java.sql.ResultSet
 import java.time.Instant
 import java.util.UUID
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.decodeFromString
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kz.oyla.server.model.ExerciseStatus
@@ -49,8 +51,8 @@ class DatabaseExerciseRepository : ExerciseRepository {
         if (records.isEmpty()) return@database 0
         connection.prepareStatement(
             """INSERT INTO session_exercises
-               (id, session_id, exercise_id, status, shown_at, started_at, completed_at, created_at, position, is_current)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               (id, session_id, exercise_id, status, shown_at, started_at, completed_at, created_at, position, is_current, source_exercise_id, activity_type, snapshot_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
                ON CONFLICT (session_id, position) DO NOTHING"""
         ).use { statement ->
             records.forEach { record ->
@@ -64,6 +66,9 @@ class DatabaseExerciseRepository : ExerciseRepository {
                 statement.setTimestamp(8, java.sql.Timestamp.from(record.createdAt))
                 statement.setInt(9, record.position)
                 statement.setBoolean(10, record.isCurrent)
+                statement.setObject(11, record.snapshot?.sourceExerciseId?.let(UUID::fromString))
+                statement.setString(12, record.snapshot?.activityType?.name ?: "SINGLE_CHOICE")
+                statement.setString(13, record.snapshot?.let(json::encodeToString))
                 statement.addBatch()
             }
             statement.executeBatch().sumOf { if (it > 0) it else 0 }
@@ -173,7 +178,8 @@ class DatabaseExerciseRepository : ExerciseRepository {
         exerciseId = getString("exercise_id"), status = ExerciseStatus.valueOf(getString("status")),
         shownAt = getTimestamp("shown_at")?.toInstant(), startedAt = getTimestamp("started_at")?.toInstant(),
         completedAt = getTimestamp("completed_at")?.toInstant(), createdAt = getTimestamp("created_at").toInstant(),
-        position = getInt("position"), isCurrent = getBoolean("is_current")
+        position = getInt("position"), isCurrent = getBoolean("is_current"),
+        snapshot = getString("snapshot_json")?.let { runCatching { json.decodeFromString<kz.oyla.server.model.ExerciseSnapshot>(it) }.getOrNull() }
     )
     private fun ResultSet.toExerciseAttemptRecord() = ExerciseAttemptRecord(
         id = getObject("id", UUID::class.java), sessionExerciseId = getObject("session_exercise_id", UUID::class.java),
@@ -184,4 +190,5 @@ class DatabaseExerciseRepository : ExerciseRepository {
 
     private val connection: Connection get() = (TransactionManager.current().connection as JdbcConnectionImpl).connection
     private suspend fun <T> database(block: () -> T): T = withContext(Dispatchers.IO) { transaction { block() } }
+    private companion object { val json = Json { encodeDefaults = true; explicitNulls = false } }
 }

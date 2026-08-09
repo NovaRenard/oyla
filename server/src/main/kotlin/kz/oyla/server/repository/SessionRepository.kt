@@ -23,7 +23,9 @@ data class SessionRecord(
     val specialistId: UUID? = null,
     val specialistDeviceUuid: UUID? = null,
     val startedAt: Instant? = null,
-    val isManaged: Boolean = false
+    val isManaged: Boolean = false,
+    val lessonTemplateId: UUID? = null,
+    val templateNameSnapshot: String? = null
 )
 
 data class LessonParticipantRecord(
@@ -34,7 +36,7 @@ data class LessonParticipantRecord(
     val createdAt: Instant
 )
 
-data class ManagedLessonRecord(val session: SessionRecord, val participant: LessonParticipantRecord)
+data class ManagedLessonRecord(val session: SessionRecord, val participant: LessonParticipantRecord, val exerciseCount: Int = 0)
 
 data class LessonExerciseHistoryRecord(
     val position: Int,
@@ -59,8 +61,8 @@ interface SessionRepository {
     suspend fun isConnectionCodeActive(code: String, now: Instant): Boolean
     /** Returns false when another active session claimed the generated code first. */
     suspend fun createSession(session: SessionRecord): Boolean
-    /** Creates a managed session, its sole release participant and five default plan rows atomically. */
-    suspend fun createManagedSession(session: SessionRecord, participant: LessonParticipantRecord, exerciseIds: List<String>): Boolean
+    /** Creates a managed session, its participant and all immutable snapshot rows atomically. */
+    suspend fun createManagedSession(session: SessionRecord, participant: LessonParticipantRecord, exercises: List<SessionExerciseRecord>): Boolean
     suspend fun findById(id: UUID): SessionRecord?
     suspend fun connectChild(
         code: String,

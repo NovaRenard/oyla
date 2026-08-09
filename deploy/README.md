@@ -8,6 +8,6 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env logs -f oyla-
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env down
 ```
 
-The local health endpoint is `http://localhost:8083/health`.
+The local health endpoint is `http://localhost:8083/health`. Production additionally mounts the persistent `oyla-media-data` Docker volume at `/data/media`; never place uploaded media in the Git worktree.
 
 For production, copy `.env.prod.example` to `.env.prod`, fill every placeholder, and follow [the production runbook](../docs/production-deployment.md). Never commit `.env.prod`; keep `OYLA_COOKIE_SECURE=true` and `ALLOW_PUBLIC_REGISTRATION=false`.
