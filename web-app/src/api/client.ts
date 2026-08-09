@@ -1,4 +1,4 @@
-import { ApiError, type ActivationCode, type AuthResponse, type Center, type Child, type Device, type DeviceRole, type DeviceStatus, type MeResponse, type Specialist } from "./types";
+import { ApiError, type ActivationCode, type AuthResponse, type Center, type Child, type Device, type DeviceRole, type DeviceStatus, type Lesson, type LessonDetails, type LessonStatus, type MeResponse, type Specialist } from "./types";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 let accessToken: string | null = null;
@@ -137,6 +137,16 @@ export const api = {
   updateSpecialist: (id: string, input: { firstName?: string; lastName?: string; specialization?: string }) => authenticated<Specialist>(`/api/v1/specialists/${id}`, { method: "PATCH", body: input }),
   archiveSpecialist: (id: string) => authenticated<Specialist>(`/api/v1/specialists/${id}/archive`, { method: "POST" }),
   restoreSpecialist: (id: string) => authenticated<Specialist>(`/api/v1/specialists/${id}/restore`, { method: "POST" }),
+  listLessons: (filters?: { childId?: string; specialistId?: string; status?: LessonStatus }) => {
+    const query = new URLSearchParams();
+    if (filters?.childId) query.set("childId", filters.childId);
+    if (filters?.specialistId) query.set("specialistId", filters.specialistId);
+    if (filters?.status) query.set("status", filters.status);
+    return authenticated<Lesson[]>(`/api/v1/lessons${query.size ? `?${query}` : ""}`);
+  },
+  getLesson: (id: string) => authenticated<LessonDetails>(`/api/v1/lessons/${id}`),
+  childLessons: (id: string, status?: LessonStatus) => authenticated<Lesson[]>(`/api/v1/children/${id}/lessons${status ? `?status=${status}` : ""}`),
+  specialistLessons: (id: string, status?: LessonStatus) => authenticated<Lesson[]>(`/api/v1/specialists/${id}/lessons${status ? `?status=${status}` : ""}`),
 };
 
 export function messageForError(error: unknown): string {

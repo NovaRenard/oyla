@@ -8,6 +8,7 @@ import kz.oyla.server.model.SessionStatus
 /** Deterministic repository used by HTTP tests; production always uses PostgreSQL. */
 class InMemorySessionRepository : SessionRepository {
     private val sessions = linkedMapOf<UUID, SessionRecord>()
+    private val participants = linkedMapOf<UUID, LessonParticipantRecord>()
 
     override suspend fun isConnectionCodeActive(code: String, now: Instant): Boolean = synchronized(sessions) {
         sessions.values.any {
@@ -86,6 +87,15 @@ class InMemorySessionRepository : SessionRepository {
         }
     }
 
+    override suspend fun createManagedSession(session: SessionRecord, participant: LessonParticipantRecord, exerciseIds: List<String>): Boolean = synchronized(sessions) {
+        if (!session.isManaged || exerciseIds.size != 5 || sessions.values.any {
+                it.connectionCode == session.connectionCode && it.status in setOf(SessionStatus.WAITING_FOR_CHILD, SessionStatus.READY) && it.expiresAt > session.createdAt
+            }) return@synchronized false
+        sessions[session.id] = session
+        participants[participant.id] = participant
+        true
+    }
+
     override suspend fun complete(id: UUID, now: Instant): SessionRecord? = synchronized(sessions) {
         val session = sessions[id] ?: return@synchronized null
         if (session.status in setOf(SessionStatus.WAITING_FOR_CHILD, SessionStatus.READY)) {
@@ -99,4 +109,34 @@ class InMemorySessionRepository : SessionRepository {
         connected: Boolean,
         now: Instant
     ) = Unit
+
+    override suspend fun isManagedDeviceBusy(deviceId: UUID): Boolean = synchronized(sessions) {
+        sessions.values.any { session ->
+            session.isManaged && session.status in setOf(SessionStatus.WAITING_FOR_CHILD, SessionStatus.READY) &&
+                (session.specialistDeviceUuid == deviceId || participants.values.any { it.sessionId == session.id && it.deviceId == deviceId })
+        }
+    }
+
+    override suspend fun currentChildAssignment(deviceId: UUID): ManagedLessonRecord? = synchronized(sessions) {
+        managedLessons().filter { it.participant.deviceId == deviceId && it.session.status in setOf(SessionStatus.WAITING_FOR_CHILD, SessionStatus.READY) }
+            .maxByOrNull { it.session.startedAt ?: it.session.createdAt }
+    }
+
+    override suspend fun currentSpecialistLesson(deviceId: UUID): ManagedLessonRecord? = synchronized(sessions) {
+        managedLessons().filter { it.session.specialistDeviceUuid == deviceId && it.session.status in setOf(SessionStatus.WAITING_FOR_CHILD, SessionStatus.READY) }
+            .maxByOrNull { it.session.startedAt ?: it.session.createdAt }
+    }
+
+    override suspend fun listManagedLessons(centerId: UUID, childId: UUID?, specialistId: UUID?, status: SessionStatus?): List<ManagedLessonRecord> = synchronized(sessions) {
+        managedLessons().filter { it.session.centerId == centerId && (childId == null || it.participant.childId == childId) && (specialistId == null || it.session.specialistId == specialistId) && (status == null || it.session.status == status) }
+            .sortedByDescending { it.session.startedAt ?: it.session.createdAt }
+    }
+
+    override suspend fun getManagedLesson(centerId: UUID, sessionId: UUID): LessonDetailRecord? = synchronized(sessions) {
+        managedLessons().firstOrNull { it.session.centerId == centerId && it.session.id == sessionId }?.let { LessonDetailRecord(it, emptyList()) }
+    }
+
+    private fun managedLessons(): List<ManagedLessonRecord> = sessions.values.filter { it.isManaged }.mapNotNull { session ->
+        participants.values.singleOrNull { it.sessionId == session.id }?.let { ManagedLessonRecord(session, it) }
+    }
 }

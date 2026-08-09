@@ -44,6 +44,7 @@ import kz.oyla.server.service.SessionService
 import kz.oyla.server.service.ExerciseService
 import kz.oyla.server.service.SaasConfig
 import kz.oyla.server.service.SaasService
+import kz.oyla.server.service.LessonService
 import kz.oyla.server.util.ActivationRateLimiter
 
 fun main(args: Array<String>) {
@@ -91,6 +92,7 @@ fun Application.module(
     val eventHub = SessionEventHub(json)
     val tenants = saasRepository ?: if (repository is InMemorySessionRepository) InMemorySaasRepository() else DatabaseSaasRepository()
     val saasService = SaasService(tenants, saasConfig, clock = clock)
+    val lessonService = LessonService(tenants, repository, exerciseService, saasConfig, clock = clock)
     val limiter = activationRateLimiter ?: ActivationRateLimiter(clock)
 
     install(CallLogging) {
@@ -125,9 +127,9 @@ fun Application.module(
     }
     routing {
         healthRoutes()
-        sessionRoutes(sessionService, exerciseService, eventHub)
+        sessionRoutes(sessionService, exerciseService, eventHub, lessonService)
         sessionWebSocketRoutes(sessionService, exerciseService, eventHub, json)
-        saasRoutes(saasService, limiter)
+        saasRoutes(saasService, lessonService, limiter)
     }
 }
 
@@ -135,5 +137,6 @@ private fun io.ktor.server.application.ApplicationCall.isSaasPath(): Boolean = r
         it.startsWith("/api/v1/auth") || it.startsWith("/api/v1/centers") ||
         it.startsWith("/api/v1/devices") || it.startsWith("/api/v1/device-auth") ||
         it.startsWith("/api/v1/children") || it.startsWith("/api/v1/specialists") ||
-        it.startsWith("/api/v1/device-data")
+        it.startsWith("/api/v1/device-data") || it.startsWith("/api/v1/lessons") ||
+        it.startsWith("/api/v1/device-lessons")
 }

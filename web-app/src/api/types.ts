@@ -80,6 +80,41 @@ export interface Specialist {
   updatedAt: string;
 }
 
+export type LessonStatus = "WAITING_FOR_CHILD" | "READY" | "COMPLETED" | "CANCELLED" | "EXPIRED";
+
+/** Web history deliberately excludes session/device access tokens and legacy connection codes. */
+export interface Lesson {
+  id: string;
+  childId: string;
+  childName: string;
+  specialistId: string;
+  specialistName: string;
+  status: LessonStatus;
+  startedAt: string;
+  completedAt?: string;
+  durationMs?: number;
+  exerciseCount: number;
+}
+
+export interface LessonExercise {
+  position: number;
+  exerciseId: string;
+  instructionText: string;
+  status: string;
+  attemptCount: number;
+  incorrectAttempts: number;
+  timeToCorrectMs?: number;
+}
+
+export interface LessonDetails {
+  lesson: Lesson;
+  specialistDeviceId: string;
+  specialistDeviceName: string;
+  childDeviceId: string;
+  childDeviceName: string;
+  exercises: LessonExercise[];
+}
+
 export interface ApiErrorBody {
   code: string;
   message: string;

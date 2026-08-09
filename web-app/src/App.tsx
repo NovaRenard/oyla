@@ -7,6 +7,7 @@ import { DeviceDetailsPage, DevicesPage } from "./features/devices/DevicesPages"
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { ChildDetailsPage, ChildrenPage } from "./features/children/ChildrenPages";
 import { SpecialistDetailsPage, SpecialistsPage } from "./features/specialists/SpecialistsPages";
+import { LessonDetailsPage, LessonsPage } from "./features/lessons/LessonsPages";
 
 function ProtectedRoute() {
   const { loading, user } = useAuth();
@@ -33,6 +34,8 @@ export function App() {
       <Route path="/children/:childId" element={<ChildDetailsPage />} />
       <Route path="/specialists" element={<SpecialistsPage />} />
       <Route path="/specialists/:specialistId" element={<SpecialistDetailsPage />} />
+      <Route path="/lessons" element={<LessonsPage />} />
+      <Route path="/lessons/:lessonId" element={<LessonDetailsPage />} />
       <Route path="/settings" element={<SettingsPage />} />
     </Route></Route>
     <Route path="*" element={<Navigate to="/overview" replace />} />

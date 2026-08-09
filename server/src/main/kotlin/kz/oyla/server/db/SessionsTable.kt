@@ -17,6 +17,11 @@ object SessionsTable : Table("sessions") {
     val expiresAt = timestamp("expires_at")
     val connectedAt = timestamp("connected_at").nullable()
     val completedAt = timestamp("completed_at").nullable()
+    val centerId = uuid("center_id").nullable()
+    val specialistId = uuid("specialist_id").nullable()
+    val specialistDeviceUuid = uuid("specialist_device_uuid").nullable()
+    val startedAt = timestamp("started_at").nullable()
+    val isManaged = bool("is_managed")
 
     override val primaryKey = PrimaryKey(id)
 }

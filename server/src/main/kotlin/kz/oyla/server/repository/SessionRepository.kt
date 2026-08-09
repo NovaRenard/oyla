@@ -17,8 +17,36 @@ data class SessionRecord(
     val createdAt: Instant,
     val expiresAt: Instant,
     val connectedAt: Instant?,
-    val completedAt: Instant?
+    val completedAt: Instant?,
+    /** Null for legacy code-based sessions; required by the managed SaaS flow. */
+    val centerId: UUID? = null,
+    val specialistId: UUID? = null,
+    val specialistDeviceUuid: UUID? = null,
+    val startedAt: Instant? = null,
+    val isManaged: Boolean = false
 )
+
+data class LessonParticipantRecord(
+    val id: UUID,
+    val sessionId: UUID,
+    val childId: UUID,
+    val deviceId: UUID,
+    val createdAt: Instant
+)
+
+data class ManagedLessonRecord(val session: SessionRecord, val participant: LessonParticipantRecord)
+
+data class LessonExerciseHistoryRecord(
+    val position: Int,
+    val exerciseId: String,
+    val instructionText: String,
+    val status: kz.oyla.server.model.ExerciseStatus,
+    val attemptCount: Int,
+    val incorrectAttempts: Int,
+    val timeToCorrectMs: Long?
+)
+
+data class LessonDetailRecord(val lesson: ManagedLessonRecord, val exercises: List<LessonExerciseHistoryRecord>)
 
 sealed interface ChildConnectionResult {
     data class Connected(val session: SessionRecord) : ChildConnectionResult
@@ -31,6 +59,8 @@ interface SessionRepository {
     suspend fun isConnectionCodeActive(code: String, now: Instant): Boolean
     /** Returns false when another active session claimed the generated code first. */
     suspend fun createSession(session: SessionRecord): Boolean
+    /** Creates a managed session, its sole release participant and five default plan rows atomically. */
+    suspend fun createManagedSession(session: SessionRecord, participant: LessonParticipantRecord, exerciseIds: List<String>): Boolean
     suspend fun findById(id: UUID): SessionRecord?
     suspend fun connectChild(
         code: String,
@@ -48,4 +78,9 @@ interface SessionRepository {
         connected: Boolean,
         now: Instant
     )
+    suspend fun isManagedDeviceBusy(deviceId: UUID): Boolean
+    suspend fun currentChildAssignment(deviceId: UUID): ManagedLessonRecord?
+    suspend fun currentSpecialistLesson(deviceId: UUID): ManagedLessonRecord?
+    suspend fun listManagedLessons(centerId: UUID, childId: UUID? = null, specialistId: UUID? = null, status: SessionStatus? = null): List<ManagedLessonRecord>
+    suspend fun getManagedLesson(centerId: UUID, sessionId: UUID): LessonDetailRecord?
 }
