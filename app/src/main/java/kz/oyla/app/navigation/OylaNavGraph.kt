@@ -3,6 +3,9 @@ package kz.oyla.app.navigation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
@@ -14,6 +17,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import kz.oyla.app.data.local.DevicePreferences
 import kz.oyla.app.data.remote.OylaWebSocketClient
+import kz.oyla.app.data.remote.DeviceAuthGateway
 import kz.oyla.app.data.session.SessionRepository
 import kz.oyla.app.domain.model.DeviceRole
 import kz.oyla.app.ui.child.ChildConnectScreen
@@ -32,6 +36,15 @@ import kz.oyla.app.ui.session.SpecialistWaitingScreen
 import kz.oyla.app.ui.session.SpecialistExerciseScreen
 import kz.oyla.app.ui.session.ChildExerciseScreen
 import kz.oyla.app.ui.session.SpecialistSummaryScreen
+import kz.oyla.app.ui.lesson.ChildAssignmentViewModel
+import kz.oyla.app.ui.lesson.ChildAssignmentViewModelFactory
+import kz.oyla.app.ui.lesson.ChildDeviceSelectionScreen
+import kz.oyla.app.ui.lesson.ChildIdleScreen
+import kz.oyla.app.ui.lesson.ChildSelectionScreen
+import kz.oyla.app.ui.lesson.LessonConfirmationScreen
+import kz.oyla.app.ui.lesson.ManagedLessonLaunchViewModel
+import kz.oyla.app.ui.lesson.ManagedLessonLaunchViewModelFactory
+import kz.oyla.app.ui.lesson.SpecialistSelectionScreen
 
 @Composable
 fun OylaNavGraph(
@@ -39,6 +52,10 @@ fun OylaNavGraph(
     startDestination: OylaDestination,
     sessionRepository: SessionRepository,
     webSocketClient: OylaWebSocketClient,
+    deviceGateway: DeviceAuthGateway,
+    deviceToken: String,
+    centerName: String,
+    deviceName: String,
     allowLegacyRoleSelection: Boolean = false
 ) {
     val navController = rememberNavController()
@@ -48,6 +65,12 @@ fun OylaNavGraph(
     )
     val childViewModel: ChildSessionViewModel = viewModel(
         factory = remember { ChildSessionViewModelFactory(sessionRepository, webSocketClient) }
+    )
+    val lessonLaunchViewModel: ManagedLessonLaunchViewModel = viewModel(
+        factory = remember { ManagedLessonLaunchViewModelFactory(deviceGateway, deviceToken, sessionRepository, devicePreferences) }
+    )
+    val childAssignmentViewModel: ChildAssignmentViewModel = viewModel(
+        factory = remember { ChildAssignmentViewModelFactory(deviceGateway, deviceToken, sessionRepository) }
     )
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -95,10 +118,21 @@ fun OylaNavGraph(
                 }
             }
             composable(OylaDestination.SPECIALIST_HOME.route) {
+                val lessonState by lessonLaunchViewModel.uiState.collectAsState()
+                LaunchedEffect(Unit) { lessonLaunchViewModel.restoreCurrentLesson() }
+                LaunchedEffect(lessonState.recoveredLesson?.sessionId) {
+                    lessonState.recoveredLesson?.let { lesson ->
+                        lessonLaunchViewModel.consumeRecoveredLesson()
+                        specialistViewModel.startManagedLesson(lesson)
+                        navController.navigate(OylaDestination.SPECIALIST_WAITING.route) { launchSingleTop = true }
+                    }
+                }
                 SpecialistHomeScreen(
                     onNewLesson = {
-                        navController.navigate(OylaDestination.CREATE_SESSION.route)
+                        navController.navigate(OylaDestination.SELECT_SPECIALIST.route)
                     },
+                    centerName = centerName,
+                    deviceName = deviceName,
                     onOpenSettings = {
                         navController.navigate(OylaDestination.SPECIALIST_SETTINGS.route)
                     }
@@ -164,6 +198,50 @@ fun OylaNavGraph(
                     }
                 )
             }
+            composable(OylaDestination.CHILD_IDLE.route) {
+                ChildIdleScreen(childAssignmentViewModel) { assignment ->
+                    childViewModel.acceptManagedAssignment(assignment) {
+                        navController.navigate(OylaDestination.CHILD_WAITING.route) {
+                            popUpTo(OylaDestination.CHILD_IDLE.route) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
+                }
+            }
+            composable(OylaDestination.SELECT_SPECIALIST.route) {
+                SpecialistSelectionScreen(
+                    viewModel = lessonLaunchViewModel,
+                    onNext = { navController.navigate(OylaDestination.SELECT_CHILD.route) },
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable(OylaDestination.SELECT_CHILD.route) {
+                ChildSelectionScreen(
+                    viewModel = lessonLaunchViewModel,
+                    onNext = { navController.navigate(OylaDestination.SELECT_CHILD_DEVICE.route) },
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable(OylaDestination.SELECT_CHILD_DEVICE.route) {
+                ChildDeviceSelectionScreen(
+                    viewModel = lessonLaunchViewModel,
+                    onNext = { navController.navigate(OylaDestination.CONFIRM_LESSON.route) },
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable(OylaDestination.CONFIRM_LESSON.route) {
+                LessonConfirmationScreen(
+                    viewModel = lessonLaunchViewModel,
+                    onBack = { navController.popBackStack() },
+                    onStarted = { lesson ->
+                        specialistViewModel.startManagedLesson(lesson)
+                        navController.navigate(OylaDestination.SPECIALIST_WAITING.route) {
+                            popUpTo(OylaDestination.SPECIALIST_HOME.route) { inclusive = false }
+                            launchSingleTop = true
+                        }
+                    }
+                )
+            }
             composable(OylaDestination.CREATE_SESSION.route) {
                 CreateSessionScreen(
                     viewModel = specialistViewModel,
@@ -200,8 +278,8 @@ fun OylaNavGraph(
                         navController.navigate(OylaDestination.CHILD_EXERCISE.route) { launchSingleTop = true }
                     },
                     onCancelled = {
-                        navController.navigate(OylaDestination.CHILD_CONNECT.route) {
-                            popUpTo(OylaDestination.CHILD_CONNECT.route) { inclusive = false }
+                        navController.navigate(OylaDestination.CHILD_IDLE.route) {
+                            popUpTo(OylaDestination.CHILD_IDLE.route) { inclusive = false }
                             launchSingleTop = true
                         }
                     }
@@ -240,8 +318,8 @@ fun OylaNavGraph(
                     viewModel = childViewModel,
                     onOpenSettings = { navController.navigate(OylaDestination.CHILD_SETTINGS.route) },
                     onSessionEnded = {
-                        navController.navigate(OylaDestination.CHILD_CONNECT.route) {
-                            popUpTo(OylaDestination.CHILD_CONNECT.route) { inclusive = false }
+                        navController.navigate(OylaDestination.CHILD_IDLE.route) {
+                            popUpTo(OylaDestination.CHILD_IDLE.route) { inclusive = false }
                             launchSingleTop = true
                         }
                     }

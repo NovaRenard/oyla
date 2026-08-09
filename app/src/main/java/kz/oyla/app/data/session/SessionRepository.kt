@@ -20,6 +20,8 @@ import kz.oyla.app.data.remote.dto.AnswerExerciseRequest
 import kz.oyla.app.data.remote.dto.AnswerExerciseResponse
 import kz.oyla.app.data.remote.dto.NextExerciseRequest
 import kz.oyla.app.data.remote.dto.SessionSummaryResponse
+import kz.oyla.app.data.remote.dto.DeviceLessonResponse
+import kz.oyla.app.data.remote.dto.ChildLessonAssignmentResponse
 import kz.oyla.app.domain.model.DeviceRole
 
 data class SessionDetails(
@@ -29,7 +31,8 @@ data class SessionDetails(
     val status: String,
     val childConnected: Boolean,
     val token: String,
-    val role: DeviceRole
+    val role: DeviceRole,
+    val specialistName: String? = null
 )
 
 sealed interface SessionActionResult<out T> {
@@ -146,6 +149,28 @@ class SessionRepository(
 
     suspend fun clearActiveSession() = storage.clearActiveSession()
 
+    /** Stores a server-assigned SaaS lesson locally only after the device-auth response succeeds. */
+    suspend fun adoptManagedSpecialistLesson(lesson: DeviceLessonResponse): SessionDetails = SessionDetails(
+        sessionId = lesson.sessionId,
+        childName = lesson.childName,
+        connectionCode = null,
+        status = lesson.status,
+        childConnected = true,
+        token = lesson.sessionToken,
+        role = DeviceRole.SPECIALIST,
+        specialistName = lesson.specialistName
+    ).also { storage.saveActiveSession(it.toActiveSession()) }
+
+    suspend fun adoptManagedChildAssignment(assignment: ChildLessonAssignmentResponse): SessionDetails = SessionDetails(
+        sessionId = assignment.sessionId,
+        childName = assignment.childName,
+        connectionCode = null,
+        status = assignment.status,
+        childConnected = true,
+        token = assignment.sessionToken,
+        role = DeviceRole.CHILD
+    ).also { storage.saveActiveSession(it.toActiveSession()) }
+
     private fun CreateSessionResponse.toSpecialistDetails() = SessionDetails(
         sessionId = sessionId,
         childName = "",
@@ -173,14 +198,16 @@ class SessionRepository(
         status = status,
         childConnected = childConnected,
         token = active.sessionToken,
-        role = active.role
+        role = active.role,
+        specialistName = active.specialistName
     )
 
     private fun SessionDetails.toActiveSession() = ActiveSession(
         sessionId = sessionId,
         sessionToken = token,
         role = role,
-        connectionCode = if (role == DeviceRole.SPECIALIST) connectionCode else null
+        connectionCode = if (role == DeviceRole.SPECIALIST) connectionCode else null,
+        specialistName = specialistName
     )
 
     private fun NetworkResult<*>.toUserError(): SessionUserError = when (this) {

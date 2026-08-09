@@ -98,19 +98,16 @@ private fun OylaApp(devicePreferences: DevicePreferences) {
         is DeviceStartupUiState.Activation -> ActivationScreen(state as DeviceStartupUiState.Activation, startupViewModel::activate)
         is DeviceStartupUiState.Blocked -> BlockedDeviceScreen((state as DeviceStartupUiState.Blocked).identity, startupViewModel::validate)
         is DeviceStartupUiState.Offline -> OfflineDeviceScreen((state as DeviceStartupUiState.Offline).identity, startupViewModel::validate)
-        is DeviceStartupUiState.Ready -> ActivatedOylaApp((state as DeviceStartupUiState.Ready).identity, devicePreferences)
+        is DeviceStartupUiState.Ready -> ActivatedOylaApp((state as DeviceStartupUiState.Ready).identity, devicePreferences, gateway)
     }
 }
 
 @Composable
-private fun ActivatedOylaApp(identity: DeviceIdentity, devicePreferences: DevicePreferences) {
+private fun ActivatedOylaApp(identity: DeviceIdentity, devicePreferences: DevicePreferences, gateway: DeviceAuthApiClient) {
     var startDestination by remember(identity.deviceId) { mutableStateOf<OylaDestination?>(null) }
     LaunchedEffect(identity.deviceId, identity.deviceRole) {
-        val active = devicePreferences.getActiveSession()
         startDestination = when {
-            active?.role == DeviceRole.SPECIALIST && identity.deviceRole == DeviceRole.SPECIALIST -> OylaDestination.SPECIALIST_WAITING
-            active?.role == DeviceRole.CHILD && identity.deviceRole == DeviceRole.CHILD -> OylaDestination.CHILD_WAITING
-            identity.deviceRole == DeviceRole.CHILD -> OylaDestination.CHILD_CONNECT
+            identity.deviceRole == DeviceRole.CHILD -> OylaDestination.CHILD_IDLE
             else -> OylaDestination.SPECIALIST_HOME
         }
     }
@@ -123,6 +120,10 @@ private fun ActivatedOylaApp(identity: DeviceIdentity, devicePreferences: Device
         startDestination = destination,
         sessionRepository = sessionRepository,
         webSocketClient = webSocketClient,
+        deviceGateway = gateway,
+        deviceToken = identity.deviceToken,
+        centerName = identity.centerName,
+        deviceName = identity.deviceName,
         allowLegacyRoleSelection = BuildConfig.DEBUG
     )
 }

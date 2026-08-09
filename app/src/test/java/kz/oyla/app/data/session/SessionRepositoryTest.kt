@@ -12,6 +12,8 @@ import kz.oyla.app.data.remote.dto.CreateSessionResponse
 import kz.oyla.app.data.remote.dto.SessionStateResponse
 import kz.oyla.app.data.remote.dto.ShowExerciseRequest
 import kz.oyla.app.data.remote.dto.ShowExerciseResponse
+import kz.oyla.app.data.remote.dto.ChildLessonAssignmentResponse
+import kz.oyla.app.data.remote.dto.DeviceLessonResponse
 import kz.oyla.app.domain.model.DeviceRole
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -75,6 +77,25 @@ class SessionRepositoryTest {
             "sound-r-rocket"
         )
         assertEquals("Соединение потеряно. Переподключаемся…", (result as ExerciseActionResult.Failure).message)
+    }
+
+    @Test
+    fun `server-assigned SaaS lesson persists only the role-specific token without a connection code`() = runBlocking {
+        val storage = FakeStorage()
+        val repository = SessionRepository(FakeApi(), storage)
+        val specialist = repository.adoptManagedSpecialistLesson(
+            DeviceLessonResponse("lesson-1", "specialist-1", "Анна", "child-1", "Алихан", "tablet-child", "READY", "specialist-token", "2026-08-09T10:00:00Z")
+        )
+        assertEquals(DeviceRole.SPECIALIST, specialist.role)
+        assertEquals(null, specialist.connectionCode)
+        assertEquals("specialist-token", storage.active?.sessionToken)
+
+        val child = repository.adoptManagedChildAssignment(
+            ChildLessonAssignmentResponse("lesson-1", "child-1", "Алихан", "child-token", "READY", "2026-08-09T10:00:00Z")
+        )
+        assertEquals(DeviceRole.CHILD, child.role)
+        assertEquals(null, child.connectionCode)
+        assertEquals("child-token", storage.active?.sessionToken)
     }
 
     private class FakeStorage : SessionStorage {

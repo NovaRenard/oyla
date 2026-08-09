@@ -25,12 +25,24 @@ import kz.oyla.app.data.remote.dto.ActivateDeviceRequest
 import kz.oyla.app.data.remote.dto.ActivateDeviceResponse
 import kz.oyla.app.data.remote.dto.DeviceAuthMeResponse
 import kz.oyla.app.data.remote.dto.DeviceHeartbeatRequest
+import kz.oyla.app.data.remote.dto.DeviceCatalogChild
+import kz.oyla.app.data.remote.dto.DeviceCatalogSpecialist
+import kz.oyla.app.data.remote.dto.AvailableChildDevice
+import kz.oyla.app.data.remote.dto.ChildLessonAssignmentResponse
+import kz.oyla.app.data.remote.dto.CreateDeviceLessonRequest
+import kz.oyla.app.data.remote.dto.DeviceLessonResponse
 import kz.oyla.app.data.remote.dto.SaasErrorResponse
 
 interface DeviceAuthGateway {
     suspend fun activate(request: ActivateDeviceRequest): NetworkResult<ActivateDeviceResponse>
     suspend fun me(deviceToken: String): NetworkResult<DeviceAuthMeResponse>
     suspend fun heartbeat(deviceToken: String, request: DeviceHeartbeatRequest): NetworkResult<DeviceAuthMeResponse>
+    suspend fun children(deviceToken: String): NetworkResult<List<DeviceCatalogChild>> = NetworkResult.HttpError(501, "NOT_IMPLEMENTED", "Недоступно")
+    suspend fun specialists(deviceToken: String): NetworkResult<List<DeviceCatalogSpecialist>> = NetworkResult.HttpError(501, "NOT_IMPLEMENTED", "Недоступно")
+    suspend fun availableChildDevices(deviceToken: String): NetworkResult<List<AvailableChildDevice>> = NetworkResult.HttpError(501, "NOT_IMPLEMENTED", "Недоступно")
+    suspend fun createLesson(deviceToken: String, request: CreateDeviceLessonRequest): NetworkResult<DeviceLessonResponse> = NetworkResult.HttpError(501, "NOT_IMPLEMENTED", "Недоступно")
+    suspend fun currentChildAssignment(deviceToken: String): NetworkResult<ChildLessonAssignmentResponse?> = NetworkResult.HttpError(501, "NOT_IMPLEMENTED", "Недоступно")
+    suspend fun currentSpecialistLesson(deviceToken: String): NetworkResult<DeviceLessonResponse?> = NetworkResult.HttpError(501, "NOT_IMPLEMENTED", "Недоступно")
 }
 
 /**
@@ -59,6 +71,30 @@ class DeviceAuthApiClient(
         requestJson(HttpMethod.Post, "/api/v1/device-auth/heartbeat", request)
     }
 
+    override suspend fun children(deviceToken: String): NetworkResult<List<DeviceCatalogChild>> = authenticated(deviceToken) {
+        getWithRetry("/api/v1/device-data/children")
+    }
+
+    override suspend fun specialists(deviceToken: String): NetworkResult<List<DeviceCatalogSpecialist>> = authenticated(deviceToken) {
+        getWithRetry("/api/v1/device-data/specialists")
+    }
+
+    override suspend fun availableChildDevices(deviceToken: String): NetworkResult<List<AvailableChildDevice>> = authenticated(deviceToken) {
+        getWithRetry("/api/v1/device-lessons/available-child-devices")
+    }
+
+    override suspend fun createLesson(deviceToken: String, request: CreateDeviceLessonRequest): NetworkResult<DeviceLessonResponse> = authenticated(deviceToken) {
+        requestJson(HttpMethod.Post, "/api/v1/device-lessons", request)
+    }
+
+    override suspend fun currentChildAssignment(deviceToken: String): NetworkResult<ChildLessonAssignmentResponse?> = authenticated(deviceToken) {
+        getOptional("/api/v1/device-lessons/current-assignment")
+    }
+
+    override suspend fun currentSpecialistLesson(deviceToken: String): NetworkResult<DeviceLessonResponse?> = authenticated(deviceToken) {
+        getOptional("/api/v1/device-lessons/current")
+    }
+
     private suspend fun <T> authenticated(deviceToken: String, request: suspend () -> NetworkResult<T>): NetworkResult<T> =
         tokenMutex.withLock {
             requestDeviceToken = deviceToken
@@ -83,6 +119,11 @@ class DeviceAuthApiClient(
         }
         return NetworkResult.NetworkError
     }
+
+    private suspend inline fun <reified T> getOptional(path: String): NetworkResult<T?> = try {
+        val response = client.get("${baseUrl.trimEnd('/')}$path")
+        if (response.status == HttpStatusCode.NoContent) NetworkResult.Success(null) else response.toResult()
+    } catch (_: Exception) { NetworkResult.NetworkError }
 
     private suspend inline fun <reified T> HttpResponse.toResult(): NetworkResult<T> = if (status.value in 200..299) {
         NetworkResult.Success(body())

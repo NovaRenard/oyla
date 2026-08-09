@@ -19,6 +19,7 @@ import kz.oyla.app.data.session.ExerciseActionResult
 import kz.oyla.app.data.session.SessionActionResult
 import kz.oyla.app.data.session.SessionDetails
 import kz.oyla.app.data.session.SessionRepository
+import kz.oyla.app.data.remote.dto.DeviceLessonResponse
 import kz.oyla.app.domain.model.DeviceRole
 
 data class SpecialistSessionUiState(
@@ -57,6 +58,21 @@ class SpecialistSessionViewModel(
                 }
                 is SessionActionResult.Failure -> _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = result.error.message)
             }
+        }
+    }
+
+    fun startManagedLesson(lesson: DeviceLessonResponse) {
+        if (_uiState.value.isLoading) return
+        _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+        viewModelScope.launch {
+            val session = repository.adoptManagedSpecialistLesson(lesson)
+            _uiState.value = SpecialistSessionUiState(
+                session = session,
+                creationSuccessId = session.sessionId,
+                exercise = ExerciseUiState(sessionId = session.sessionId, childName = session.childName)
+            )
+            observeSocket(session)
+            loadCurrentExercise()
         }
     }
 
