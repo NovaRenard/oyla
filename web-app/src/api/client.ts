@@ -1,4 +1,4 @@
-import { ApiError, type ActivationCode, type AuthResponse, type Center, type Child, type Device, type DeviceRole, type DeviceStatus, type Lesson, type LessonDetails, type LessonStatus, type MeResponse, type Specialist } from "./types";
+import { ApiError, type ActivationCode, type AuthResponse, type Center, type Child, type ContentExercise, type ContentOwnership, type Device, type DeviceRole, type DeviceStatus, type Lesson, type LessonDetails, type LessonStatus, type LessonTemplate, type MediaAsset, type MeResponse, type Specialist } from "./types";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 let accessToken: string | null = null;
@@ -147,6 +147,43 @@ export const api = {
   getLesson: (id: string) => authenticated<LessonDetails>(`/api/v1/lessons/${id}`),
   childLessons: (id: string, status?: LessonStatus) => authenticated<Lesson[]>(`/api/v1/children/${id}/lessons${status ? `?status=${status}` : ""}`),
   specialistLessons: (id: string, status?: LessonStatus) => authenticated<Lesson[]>(`/api/v1/specialists/${id}/lessons${status ? `?status=${status}` : ""}`),
+  listExercises: (filters?: { ownership?: ContentOwnership; status?: "ACTIVE" | "ARCHIVED"; search?: string }) => {
+    const query = new URLSearchParams(); if (filters?.ownership) query.set("ownership", filters.ownership); if (filters?.status) query.set("status", filters.status); if (filters?.search?.trim()) query.set("search", filters.search.trim());
+    return authenticated<ContentExercise[]>(`/api/v1/exercises${query.size ? `?${query}` : ""}`);
+  },
+  getExercise: (id: string) => authenticated<ContentExercise>(`/api/v1/exercises/${id}`),
+  createExercise: (input: { title: string; instructionText: string; instructionAudioAssetId?: string; options: Array<{ id?: string; label?: string; imageAssetId?: string; isCorrect: boolean }> }) => authenticated<ContentExercise>("/api/v1/exercises", { method: "POST", body: input }),
+  updateExercise: (id: string, input: { title?: string; instructionText?: string; instructionAudioAssetId?: string; options?: Array<{ id?: string; label?: string; imageAssetId?: string; isCorrect: boolean }> }) => authenticated<ContentExercise>(`/api/v1/exercises/${id}`, { method: "PATCH", body: input }),
+  archiveExercise: (id: string) => authenticated<ContentExercise>(`/api/v1/exercises/${id}/archive`, { method: "POST" }),
+  restoreExercise: (id: string) => authenticated<ContentExercise>(`/api/v1/exercises/${id}/restore`, { method: "POST" }),
+  duplicateExercise: (id: string) => authenticated<ContentExercise>(`/api/v1/exercises/${id}/duplicate`, { method: "POST" }),
+  listTemplates: (filters?: { ownership?: ContentOwnership; status?: "ACTIVE" | "ARCHIVED"; search?: string }) => {
+    const query = new URLSearchParams(); if (filters?.ownership) query.set("ownership", filters.ownership); if (filters?.status) query.set("status", filters.status); if (filters?.search?.trim()) query.set("search", filters.search.trim());
+    return authenticated<LessonTemplate[]>(`/api/v1/lesson-templates${query.size ? `?${query}` : ""}`);
+  },
+  getTemplate: (id: string) => authenticated<LessonTemplate>(`/api/v1/lesson-templates/${id}`),
+  createTemplate: (input: { name: string; description?: string; items: Array<{ exerciseId: string }> }) => authenticated<LessonTemplate>("/api/v1/lesson-templates", { method: "POST", body: input }),
+  updateTemplate: (id: string, input: { name?: string; description?: string; items?: Array<{ exerciseId: string }> }) => authenticated<LessonTemplate>(`/api/v1/lesson-templates/${id}`, { method: "PATCH", body: input }),
+  archiveTemplate: (id: string) => authenticated<LessonTemplate>(`/api/v1/lesson-templates/${id}/archive`, { method: "POST" }),
+  restoreTemplate: (id: string) => authenticated<LessonTemplate>(`/api/v1/lesson-templates/${id}/restore`, { method: "POST" }),
+  duplicateTemplate: (id: string) => authenticated<LessonTemplate>(`/api/v1/lesson-templates/${id}/duplicate`, { method: "POST" }),
+  async uploadMedia(type: "images" | "audio", file: File): Promise<MediaAsset> {
+    const request = async () => {
+      const headers = new Headers(); if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+      const body = new FormData(); body.append("file", file);
+      const response = await fetch(`${apiBaseUrl}/api/v1/media/${type}`, { method: "POST", headers, body, credentials: "include" });
+      if (!response.ok) throw await readError(response); return response.json() as Promise<MediaAsset>;
+    };
+    try { return await request(); } catch (error) { if (error instanceof ApiError && error.status === 401 && await refreshAccessToken()) return request(); throw error; }
+  },
+  async mediaBlob(url: string): Promise<Blob> {
+    const request = async () => {
+      const headers = new Headers(); if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+      const response = await fetch(`${apiBaseUrl}${url}`, { headers, credentials: "include" });
+      if (!response.ok) throw await readError(response); return response.blob();
+    };
+    try { return await request(); } catch (error) { if (error instanceof ApiError && error.status === 401 && await refreshAccessToken()) return request(); throw error; }
+  },
 };
 
 export function messageForError(error: unknown): string {

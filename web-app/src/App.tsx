@@ -8,6 +8,7 @@ import { SettingsPage } from "./features/settings/SettingsPage";
 import { ChildDetailsPage, ChildrenPage } from "./features/children/ChildrenPages";
 import { SpecialistDetailsPage, SpecialistsPage } from "./features/specialists/SpecialistsPages";
 import { LessonDetailsPage, LessonsPage } from "./features/lessons/LessonsPages";
+import { ExerciseEditorPage, ExercisesPage, TemplateEditorPage, TemplatesPage } from "./features/content/ContentPages";
 
 function ProtectedRoute() {
   const { loading, user } = useAuth();
@@ -36,6 +37,10 @@ export function App() {
       <Route path="/specialists/:specialistId" element={<SpecialistDetailsPage />} />
       <Route path="/lessons" element={<LessonsPage />} />
       <Route path="/lessons/:lessonId" element={<LessonDetailsPage />} />
+      <Route path="/content/exercises" element={<ExercisesPage />} />
+      <Route path="/content/exercises/:exerciseId" element={<ExerciseEditorPage />} />
+      <Route path="/content/templates" element={<TemplatesPage />} />
+      <Route path="/content/templates/:templateId" element={<TemplateEditorPage />} />
       <Route path="/settings" element={<SettingsPage />} />
     </Route></Route>
     <Route path="*" element={<Navigate to="/overview" replace />} />

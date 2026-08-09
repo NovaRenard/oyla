@@ -1,6 +1,9 @@
 export type DeviceRole = "CHILD" | "SPECIALIST";
 export type DeviceStatus = "ACTIVE" | "BLOCKED" | "UNLINKED";
 export type CatalogStatus = "ACTIVE" | "ARCHIVED";
+export type ContentOwnership = "SYSTEM" | "CENTER";
+export type ActivityType = "SINGLE_CHOICE";
+export type MediaType = "IMAGE" | "AUDIO";
 
 export interface User {
   id: string;
@@ -94,7 +97,14 @@ export interface Lesson {
   completedAt?: string;
   durationMs?: number;
   exerciseCount: number;
+  templateName?: string;
 }
+
+export interface MediaAsset { id: string; ownership: ContentOwnership; type: MediaType; originalFilename: string; mimeType: string; sizeBytes: number; url: string; createdAt: string; }
+export interface ContentExerciseOption { id: string; label?: string; imageAssetId?: string; imageUrl?: string; localImageAssetKey?: string; sortOrder: number; isCorrect: boolean; }
+export interface ContentExercise { id: string; ownership: ContentOwnership; activityType: ActivityType; title: string; instructionText: string; instructionAudioAssetId?: string; audioUrl?: string; localAudioAssetKey?: string; status: CatalogStatus; options: ContentExerciseOption[]; templateUsageCount: number; createdAt: string; updatedAt: string; }
+export interface LessonTemplateItem { id: string; exerciseId: string; position: number; exerciseTitle?: string; activityType?: ActivityType; }
+export interface LessonTemplate { id: string; ownership: ContentOwnership; name: string; description?: string; status: CatalogStatus; exerciseCount: number; items: LessonTemplateItem[]; createdAt: string; updatedAt: string; }
 
 export interface LessonExercise {
   position: number;
