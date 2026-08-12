@@ -5,6 +5,7 @@ import { LoginPage } from "./features/auth/AuthPages";
 import { DashboardPage } from "./features/dashboard/DashboardPage";
 import { DeviceDetailsPage, DevicesPage } from "./features/devices/DevicesPages";
 import { SettingsPage } from "./features/settings/SettingsPage";
+import { CrmIntegrationPage, IntegrationsPage } from "./features/settings/IntegrationsPages";
 import { ChildDetailsPage, ChildrenPage } from "./features/children/ChildrenPages";
 import { SpecialistDetailsPage, SpecialistsPage } from "./features/specialists/SpecialistsPages";
 import { LessonDetailsPage, LessonsPage } from "./features/lessons/LessonsPages";
@@ -42,6 +43,8 @@ export function App() {
       <Route path="/content/templates" element={<TemplatesPage />} />
       <Route path="/content/templates/:templateId" element={<TemplateEditorPage />} />
       <Route path="/settings" element={<SettingsPage />} />
+      <Route path="/settings/integrations" element={<IntegrationsPage />} />
+      <Route path="/settings/integrations/crm" element={<CrmIntegrationPage />} />
     </Route></Route>
     <Route path="*" element={<Navigate to="/overview" replace />} />
   </Routes>;

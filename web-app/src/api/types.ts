@@ -71,7 +71,19 @@ export interface Child {
   status: CatalogStatus;
   createdAt: string;
   updatedAt: string;
+  source?: ChildDataSource;
 }
+
+export type IntegrationStatus = "ACTIVE" | "DISABLED" | "ERROR";
+export interface CrmIntegration { id: string; type: "CUSTOM_CRM"; name: string; baseUrl: string; status: IntegrationStatus; hasCredential: boolean; lastConnectionCheckAt?: string; lastSuccessfulSyncAt?: string; }
+export type CrmConnectionTestStatus = "SUCCESS" | "AUTH_FAILED" | "UNREACHABLE" | "INVALID_RESPONSE" | "TIMEOUT" | "TLS_ERROR";
+export interface CrmConnectionTest { status: CrmConnectionTestStatus; }
+export type CrmChildImportState = "NOT_IMPORTED" | "IMPORTED" | "UPDATE_AVAILABLE" | "ARCHIVED_EXTERNAL";
+export interface CrmChildPreview { externalId: string; firstName: string; lastName: string; birthDate: string; status: "ACTIVE" | "ARCHIVED"; externalUpdatedAt: string; importState: CrmChildImportState; localChildId?: string; }
+export interface CrmChildrenPreview { children: CrmChildPreview[]; }
+export interface CrmImportResult { imported: number; updated: number; skipped: number; }
+export interface CrmSyncResult { checked: number; updated: number; archived: number; restored: number; unchanged: number; errors: number; }
+export interface ChildDataSource { provider: "CRM"; integrationStatus: IntegrationStatus; lastSyncedAt?: string; crmManaged: boolean; }
 
 export interface Specialist {
   id: string;

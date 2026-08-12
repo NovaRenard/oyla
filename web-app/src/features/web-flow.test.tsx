@@ -9,6 +9,7 @@ import { App } from "../App";
 import { DevicesPage, DeviceDetailsPage } from "./devices/DevicesPages";
 import { DeviceStatusBadge } from "./devices/DeviceBits";
 import { ExerciseEditorPage, TemplateEditorPage } from "./content/ContentPages";
+import { CrmIntegrationPage } from "./settings/IntegrationsPages";
 
 const auth = { user: { id: "u1", email: "owner@example.com", firstName: "Алия", status: "ACTIVE" }, centers: [{ center: { id: "c1", name: "Центр", slug: "center", status: "ACTIVE", timezone: "Asia/Almaty" }, role: "OWNER", status: "ACTIVE" }], activeCenter: { id: "c1", name: "Центр", slug: "center", status: "ACTIVE", timezone: "Asia/Almaty" }, accessToken: "access-token", accessTokenExpiresAt: "2030-01-01T00:00:00Z" };
 const device = { id: "d1", name: "Детский планшет — Кабинет 1", role: "CHILD" as const, status: "ACTIVE" as const, isOnline: false, activatedAt: "2026-01-01T00:00:00Z" };
@@ -161,5 +162,30 @@ describe("WHITEBOARD content flow", () => {
     fireEvent.click(screen.getByRole("button", { name: /Нарисуй дорожку/ }));
     expect(screen.getByText("1. Найди ракету")).toBeInTheDocument();
     expect(screen.getByText("2. Нарисуй дорожку")).toBeInTheDocument();
+  });
+});
+
+describe("CRM integration settings", () => {
+  it("tests a key before connecting and never renders the saved key", async () => {
+    let submitted: unknown;
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/refresh")) return Promise.resolve(json(auth));
+      if (url.includes("/auth/me")) return Promise.resolve(json({ user: auth.user, centers: auth.centers, activeCenter: auth.activeCenter }));
+      if (url.endsWith("/integrations/crm") && (!init?.method || init.method === "GET")) return Promise.resolve(empty());
+      if (url.endsWith("/integrations/crm/test")) return Promise.resolve(json({ status: "SUCCESS" }));
+      if (url.endsWith("/integrations/crm") && init?.method === "POST") { submitted = JSON.parse(String(init.body)); return Promise.resolve(json({ id: "crm-1", type: "CUSTOM_CRM", name: "CRM", baseUrl: "https://crm.example.kz", status: "ACTIVE", hasCredential: true })); }
+      return Promise.resolve(json({}));
+    }));
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ToastProvider><AuthProvider><MemoryRouter><CrmIntegrationPage /></MemoryRouter></AuthProvider></ToastProvider></QueryClientProvider>);
+    expect(await screen.findByRole("heading", { name: "CRM" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Адрес CRM"), { target: { value: "https://crm.example.kz" } });
+    fireEvent.change(screen.getByLabelText("API-ключ"), { target: { value: "one-time-crm-key" } });
+    fireEvent.click(screen.getByRole("button", { name: "Проверить подключение" }));
+    expect((await screen.findAllByText("Подключение подтверждено")).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Подключить" }));
+    await waitFor(() => expect(submitted).toMatchObject({ baseUrl: "https://crm.example.kz", apiKey: "one-time-crm-key" }));
+    expect(screen.queryByText("one-time-crm-key")).not.toBeInTheDocument();
+    expect(await screen.findByText("••••••••••••")).toBeInTheDocument();
   });
 });

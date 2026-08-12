@@ -1,4 +1,4 @@
-import { ApiError, type ActivationCode, type ActivityType, type AuthResponse, type Center, type Child, type ContentExercise, type ContentOwnership, type Device, type DeviceRole, type DeviceStatus, type Lesson, type LessonDetails, type LessonStatus, type LessonTemplate, type MediaAsset, type MeResponse, type Specialist, type WhiteboardExerciseConfig } from "./types";
+import { ApiError, type ActivationCode, type ActivityType, type AuthResponse, type Center, type Child, type ContentExercise, type ContentOwnership, type CrmChildrenPreview, type CrmConnectionTest, type CrmImportResult, type CrmIntegration, type CrmSyncResult, type Device, type DeviceRole, type DeviceStatus, type Lesson, type LessonDetails, type LessonStatus, type LessonTemplate, type MediaAsset, type MeResponse, type Specialist, type WhiteboardExerciseConfig } from "./types";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 let accessToken: string | null = null;
@@ -126,6 +126,14 @@ export const api = {
   updateChild: (id: string, input: { firstName?: string; lastName?: string; birthDate?: string }) => authenticated<Child>(`/api/v1/children/${id}`, { method: "PATCH", body: input }),
   archiveChild: (id: string) => authenticated<Child>(`/api/v1/children/${id}/archive`, { method: "POST" }),
   restoreChild: (id: string) => authenticated<Child>(`/api/v1/children/${id}/restore`, { method: "POST" }),
+  getCrmIntegration: async () => (await authenticated<CrmIntegration | undefined>("/api/v1/integrations/crm")) ?? null,
+  createCrmIntegration: (input: { name?: string; baseUrl: string; apiKey: string }) => authenticated<CrmIntegration>("/api/v1/integrations/crm", { method: "POST", body: input }),
+  updateCrmIntegration: (input: { name?: string; baseUrl?: string; apiKey?: string }) => authenticated<CrmIntegration>("/api/v1/integrations/crm", { method: "PATCH", body: input }),
+  testCrmIntegration: (input: { baseUrl?: string; apiKey?: string }) => authenticated<CrmConnectionTest>("/api/v1/integrations/crm/test", { method: "POST", body: input }),
+  disableCrmIntegration: () => authenticated<void>("/api/v1/integrations/crm", { method: "DELETE" }),
+  previewCrmChildren: () => authenticated<CrmChildrenPreview>("/api/v1/integrations/crm/children"),
+  importCrmChildren: (externalIds: string[]) => authenticated<CrmImportResult>("/api/v1/integrations/crm/import-children", { method: "POST", body: { externalIds } }),
+  syncCrmChildren: () => authenticated<CrmSyncResult>("/api/v1/integrations/crm/sync", { method: "POST" }),
   listSpecialists: (filters?: { status?: "ACTIVE" | "ARCHIVED" | "ALL"; search?: string }) => {
     const query = new URLSearchParams();
     if (filters?.status) query.set("status", filters.status);
@@ -197,6 +205,9 @@ export function messageForError(error: unknown): string {
     CONFLICT: "Это действие сейчас невозможно. Обновите страницу и повторите попытку.",
     RATE_LIMITED: "Слишком много попыток. Подождите немного и повторите.",
     REGISTRATION_DISABLED: "Регистрация центра сейчас недоступна.",
+    CRM_CONNECTION_FAILED: "Не удалось связаться с CRM. Проверьте адрес, API-ключ и доступность CRM.",
+    CRM_INTEGRATION_NOT_CONNECTED: "Сначала подключите CRM.",
+    CHILD_MANAGED_BY_CRM: "Эти данные ребёнка управляются CRM.",
     VALIDATION_ERROR: "Проверьте заполнение полей.",
   };
   return known[error.body.code] ?? "Не удалось выполнить действие. Попробуйте ещё раз.";
