@@ -120,7 +120,8 @@ import kz.oyla.server.model.SpecialistStatus
     val birthDate: String? = null,
     val status: ChildStatus,
     val createdAt: String,
-    val updatedAt: String
+    val updatedAt: String,
+    val source: ChildDataSourceDto? = null
 )
 @Serializable data class CreateChildRequest(val firstName: String, val lastName: String? = null, val birthDate: String? = null)
 @Serializable data class UpdateChildRequest(val firstName: String? = null, val lastName: String? = null, val birthDate: String? = null)

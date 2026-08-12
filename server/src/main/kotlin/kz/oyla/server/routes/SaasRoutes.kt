@@ -35,9 +35,10 @@ import kz.oyla.server.service.ApiException
 import kz.oyla.server.service.SaasService
 import kz.oyla.server.service.LessonService
 import kz.oyla.server.service.ContentService
+import kz.oyla.server.service.ExternalIntegrationService
 import kz.oyla.server.util.ActivationRateLimiter
 
-fun Route.saasRoutes(service: SaasService, lessons: LessonService, content: ContentService, activationRateLimiter: ActivationRateLimiter) {
+fun Route.saasRoutes(service: SaasService, lessons: LessonService, content: ContentService, activationRateLimiter: ActivationRateLimiter, integrations: ExternalIntegrationService) {
     route("/api/v1/auth") {
         post("/register-center") {
             if (!service.publicRegistrationAllowed) throw ApiException.registrationDisabled()
@@ -135,6 +136,34 @@ fun Route.saasRoutes(service: SaasService, lessons: LessonService, content: Cont
                 val principal = call.webPrincipal(); val context = service.requireCenterContext(principal.userId, principal.activeCenterId)
                 val childId = call.uuidParameter("childId"); lessons.ensureChildInCenter(context, childId)
                 call.respond(lessons.listForWeb(context, childId = childId, status = call.enumQuery<SessionStatus>("status")))
+            }
+        }
+
+        route("/api/v1/integrations/crm") {
+            get {
+                val principal = call.webPrincipal(); val integration = integrations.getCrmIntegration(principal.userId, principal.activeCenterId)
+                if (integration == null) call.respond(HttpStatusCode.NoContent) else call.respond(integration)
+            }
+            post {
+                val principal = call.webPrincipal(); call.respond(HttpStatusCode.Created, integrations.createCrmIntegration(principal.userId, principal.activeCenterId, call.receive(), call.clientIp()))
+            }
+            patch {
+                val principal = call.webPrincipal(); call.respond(integrations.updateCrmIntegration(principal.userId, principal.activeCenterId, call.receive(), call.clientIp()))
+            }
+            delete {
+                val principal = call.webPrincipal(); integrations.disableCrmIntegration(principal.userId, principal.activeCenterId, call.clientIp()); call.respond(HttpStatusCode.NoContent)
+            }
+            post("/test") {
+                val principal = call.webPrincipal(); call.respond(integrations.testConnection(principal.userId, principal.activeCenterId, call.receive(), call.clientIp()))
+            }
+            get("/children") {
+                val principal = call.webPrincipal(); call.respond(integrations.previewChildren(principal.userId, principal.activeCenterId))
+            }
+            post("/import-children") {
+                val principal = call.webPrincipal(); call.respond(integrations.importChildren(principal.userId, principal.activeCenterId, call.receive(), call.clientIp()))
+            }
+            post("/sync") {
+                val principal = call.webPrincipal(); call.respond(integrations.syncChildren(principal.userId, principal.activeCenterId, call.clientIp()))
             }
         }
 

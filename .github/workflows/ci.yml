@@ -48,6 +48,7 @@ jobs:
       POSTGRES_PASSWORD: ci-only-not-a-production-secret
       JWT_SECRET: ci-only-jwt-secret-with-at-least-32-characters
       OYLA_SECRET_PEPPER: ci-only-pepper-with-at-least-32-characters
+      INTEGRATION_CREDENTIAL_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
       JWT_ISSUER: oyla-ci
       JWT_AUDIENCE: oyla-ci-web
       JWT_ACCESS_TTL_MINUTES: '15'

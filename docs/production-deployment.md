@@ -20,9 +20,10 @@ Edit `deploy/.env.prod`. Generate independent secrets without putting them in sh
 ```bash
 openssl rand -base64 48   # JWT_SECRET
 openssl rand -base64 48   # OYLA_SECRET_PEPPER
+openssl rand -base64 32   # INTEGRATION_CREDENTIAL_ENCRYPTION_KEY
 ```
 
-`JWT_SECRET`, `OYLA_SECRET_PEPPER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_USER`, `OYLA_DOMAIN`, token TTLs and `BCRYPT_LOG_ROUNDS` are required. Set `OYLA_DOMAIN=oyla.saadsarbas.tech`; Caddy's automatic HTTPS works without a configured contact email. Keep `OYLA_COOKIE_SECURE=true` and `ALLOW_PUBLIC_REGISTRATION=false`.
+`JWT_SECRET`, `OYLA_SECRET_PEPPER`, `INTEGRATION_CREDENTIAL_ENCRYPTION_KEY`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_USER`, `OYLA_DOMAIN`, token TTLs and `BCRYPT_LOG_ROUNDS` are required. `INTEGRATION_CREDENTIAL_ENCRYPTION_KEY` is an independent base64-encoded AES-256 key used only to encrypt external CRM credentials; never reuse JWT or pepper material. Set `OYLA_DOMAIN=oyla.saadsarbas.tech`; Caddy's automatic HTTPS works without a configured contact email. Keep `OYLA_COOKIE_SECURE=true` and `ALLOW_PUBLIC_REGISTRATION=false`.
 
 ## 2. Validate and start
 
@@ -116,7 +117,7 @@ deploy/scripts/restore-db.sh --confirm /srv/apps/oyla/backups/oyla-YYYYMMDDTHHMM
 docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod up -d
 ```
 
-Media restore is intentionally manual and not performed by `restore-db.sh`: inspect the target volume and archive first, then extract the matching `-media.tar.gz` into `oyla-media-data` during a maintenance window. Do not overwrite a live media volume without a separately verified backup.
+Media restore is intentionally manual and not performed by `restore-db.sh`: inspect the target volume and archive first, then extract the matching `-media.tar.gz` into `oyla-media-data` during a maintenance window. Do not overwrite a live media volume without a separately verified backup. PostgreSQL backups include encrypted CRM integration envelopes and links, but not the encryption secret. For a CRM integration disaster recovery, preserve the matching `INTEGRATION_CREDENTIAL_ENCRYPTION_KEY` independently in secure secret storage; never add that secret to a backup archive.
 
 ## 6. Deployment smoke test
 

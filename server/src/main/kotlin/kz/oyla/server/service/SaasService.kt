@@ -39,6 +39,7 @@ import kz.oyla.server.model.dto.AuthResponse
 import kz.oyla.server.model.dto.CenterDto
 import kz.oyla.server.model.dto.CenterMembershipDto
 import kz.oyla.server.model.dto.ChildDto
+import kz.oyla.server.model.dto.ChildDataSourceDto
 import kz.oyla.server.model.dto.CreateChildRequest
 import kz.oyla.server.model.dto.CreateSpecialistRequest
 import kz.oyla.server.model.dto.CreateActivationCodeRequest
@@ -62,6 +63,7 @@ import kz.oyla.server.repository.DeviceListFilter
 import kz.oyla.server.repository.ChildListFilter
 import kz.oyla.server.repository.SpecialistListFilter
 import kz.oyla.server.repository.SaasRepository
+import kz.oyla.server.repository.ExternalIntegrationRepository
 import kz.oyla.server.util.SecretGenerator
 import org.mindrot.jbcrypt.BCrypt
 
@@ -116,7 +118,8 @@ class SaasService(
     private val repository: SaasRepository,
     private val config: SaasConfig = SaasConfig.fromEnvironment(),
     private val secrets: SecretGenerator = SecretGenerator(),
-    private val clock: Clock = Clock.systemUTC()
+    private val clock: Clock = Clock.systemUTC(),
+    private val externalIntegrations: ExternalIntegrationRepository? = null
 ) {
     private val algorithm = Algorithm.HMAC512(config.jwtSecret)
     val jwtVerifier: JWTVerifier = JWT.require(algorithm).withIssuer(config.jwtIssuer).withAudience(config.jwtAudience).build()
@@ -348,12 +351,14 @@ class SaasService(
 
     suspend fun listChildren(userId: UUID, centerId: UUID?, status: String?, search: String?): List<ChildDto> {
         val context = requireCenterContext(userId, centerId)
-        return repository.listChildren(context.center.id, ChildListFilter(parseChildStatus(status), cleanSearch(search))).map { it.toDto() }
+        val children = repository.listChildren(context.center.id, ChildListFilter(parseChildStatus(status), cleanSearch(search)))
+        return buildList { children.forEach { child -> add(child.toDto(externalIntegrations?.childSource(context.center.id, child.id))) } }
     }
 
     suspend fun getChild(userId: UUID, centerId: UUID?, childId: UUID): ChildDto {
         val context = requireCenterContext(userId, centerId)
-        return (repository.findChild(context.center.id, childId) ?: throw ApiException.childNotFound()).toDto()
+        val child = repository.findChild(context.center.id, childId) ?: throw ApiException.childNotFound()
+        return child.toDto(externalIntegrations?.childSource(context.center.id, child.id))
     }
 
     suspend fun createChild(userId: UUID, centerId: UUID?, request: CreateChildRequest, ipAddress: String?): ChildDto {
@@ -368,6 +373,7 @@ class SaasService(
     suspend fun updateChild(userId: UUID, centerId: UUID?, childId: UUID, request: UpdateChildRequest, ipAddress: String?): ChildDto {
         val context = requireCenterContext(userId, centerId, managementRoles)
         val current = repository.findChild(context.center.id, childId) ?: throw ApiException.childNotFound()
+        if (externalIntegrations?.isCrmManagedChild(context.center.id, childId) == true && (request.firstName != null || request.lastName != null || request.birthDate != null)) throw ApiException.childManagedByCrm()
         val now = clock.instant()
         val updated = current.copy(
             firstName = request.firstName?.cleanRequired(100, "Имя") ?: current.firstName,
@@ -377,18 +383,20 @@ class SaasService(
         )
         if (!repository.updateChild(updated)) throw ApiException.childNotFound()
         audit(context, "CHILD_UPDATED", "CHILD", updated.id, ipAddress, now)
-        return updated.toDto()
+        return updated.toDto(externalIntegrations?.childSource(context.center.id, childId))
     }
 
     suspend fun archiveChild(userId: UUID, centerId: UUID?, childId: UUID, restore: Boolean, ipAddress: String?): ChildDto {
         val context = requireCenterContext(userId, centerId, managementRoles)
         val current = repository.findChild(context.center.id, childId) ?: throw ApiException.childNotFound()
+        if (externalIntegrations?.isCrmManagedChild(context.center.id, childId) == true) throw ApiException.childManagedByCrm()
         val target = if (restore) ChildStatus.ACTIVE else ChildStatus.ARCHIVED
         val now = clock.instant()
         val updated = current.copy(status = target, updatedAt = now)
         if (!repository.updateChild(updated)) throw ApiException.childNotFound()
+        externalIntegrations?.clearCrmArchiveOrigin(context.center.id, childId, now)
         audit(context, if (restore) "CHILD_RESTORED" else "CHILD_ARCHIVED", "CHILD", updated.id, ipAddress, now)
-        return updated.toDto()
+        return updated.toDto(externalIntegrations?.childSource(context.center.id, childId))
     }
 
     suspend fun listSpecialists(userId: UUID, centerId: UUID?, status: String?, search: String?): List<SpecialistDto> {
@@ -575,7 +583,7 @@ class SaasService(
     private fun UserCenterMembership.toDto() = CenterMembershipDto(center.toDto(), membership.role, membership.status)
     private fun DeviceRecord.toDto(now: Instant) = DeviceDto(id.toString(), name, role, status, appVersion, androidVersion, model, lastSeenAt?.toString(), activatedAt?.toString(), lastSeenAt?.isAfter(now.minus(config.onlineWindow)) == true)
     private fun DeviceActivationCodeRecord.toDto() = ActivationCodeDto(id.toString(), deviceName, deviceRole, status, expiresAt.toString(), createdAt.toString())
-    private fun ChildRecord.toDto() = ChildDto(id.toString(), firstName, lastName, birthDate?.toString(), status, createdAt.toString(), updatedAt.toString())
+    private fun ChildRecord.toDto(source: kz.oyla.server.model.ImportedChildSource? = null) = ChildDto(id.toString(), firstName, lastName, birthDate?.toString(), status, createdAt.toString(), updatedAt.toString(), source?.let { ChildDataSourceDto("CRM", it.integrationStatus, it.lastSyncedAt?.toString(), it.integrationStatus == kz.oyla.server.model.ExternalIntegrationStatus.ACTIVE) })
     private fun SpecialistRecord.toDto() = SpecialistDto(id.toString(), firstName, lastName, specialization, status, createdAt.toString(), updatedAt.toString())
 
     private companion object {

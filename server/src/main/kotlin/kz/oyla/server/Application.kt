@@ -37,6 +37,9 @@ import kz.oyla.server.repository.InMemorySaasRepository
 import kz.oyla.server.repository.ContentRepository
 import kz.oyla.server.repository.DatabaseContentRepository
 import kz.oyla.server.repository.InMemoryContentRepository
+import kz.oyla.server.repository.ExternalIntegrationRepository
+import kz.oyla.server.repository.DatabaseExternalIntegrationRepository
+import kz.oyla.server.repository.InMemoryExternalIntegrationRepository
 import kz.oyla.server.repository.WhiteboardRepository
 import kz.oyla.server.repository.DatabaseWhiteboardRepository
 import kz.oyla.server.repository.InMemoryWhiteboardRepository
@@ -56,6 +59,13 @@ import kz.oyla.server.service.ContentService
 import kz.oyla.server.service.WhiteboardService
 import kz.oyla.server.service.SessionLockRegistry
 import kz.oyla.server.util.ActivationRateLimiter
+import kz.oyla.server.integration.CredentialCipher
+import kz.oyla.server.integration.ExternalCrmClient
+import kz.oyla.server.integration.IntegrationConfig
+import kz.oyla.server.integration.IntegrationRateLimiter
+import kz.oyla.server.integration.OutboundUrlPolicy
+import kz.oyla.server.integration.SecureExternalCrmClient
+import kz.oyla.server.service.ExternalIntegrationService
 import kz.oyla.server.storage.LocalMediaStorage
 
 fun main(args: Array<String>) {
@@ -83,7 +93,11 @@ fun Application.module(
     contentRepository: ContentRepository? = null,
     saasConfig: SaasConfig = SaasConfig.fromEnvironment(),
     activationRateLimiter: ActivationRateLimiter? = null,
-    whiteboardRepository: WhiteboardRepository? = null
+    whiteboardRepository: WhiteboardRepository? = null,
+    externalIntegrationRepository: ExternalIntegrationRepository? = null,
+    integrationConfig: IntegrationConfig = IntegrationConfig.fromEnvironment(),
+    externalCrmClient: ExternalCrmClient? = null,
+    integrationRateLimiter: IntegrationRateLimiter? = null
 ) {
     val json = Json {
         ignoreUnknownKeys = true
@@ -107,7 +121,10 @@ fun Application.module(
     val exerciseService = ExerciseService(exercises, clock, whiteboardService, sessionLocks)
     val eventHub = SessionEventHub(json)
     val tenants = saasRepository ?: if (repository is InMemorySessionRepository) InMemorySaasRepository() else DatabaseSaasRepository()
-    val saasService = SaasService(tenants, saasConfig, clock = clock)
+    val externalIntegrations = externalIntegrationRepository ?: if (repository is InMemorySessionRepository) InMemoryExternalIntegrationRepository(tenants) else DatabaseExternalIntegrationRepository()
+    val saasService = SaasService(tenants, saasConfig, clock = clock, externalIntegrations = externalIntegrations)
+    val urlPolicy = OutboundUrlPolicy(integrationConfig.production, integrationConfig.allowUnsafeDevelopmentOutbound)
+    val integrationService = ExternalIntegrationService(saasService, externalIntegrations, CredentialCipher.fromSecret(integrationConfig.credentialEncryptionKey), externalCrmClient ?: SecureExternalCrmClient(urlPolicy), urlPolicy, integrationRateLimiter ?: IntegrationRateLimiter(clock), clock)
     val content = contentRepository ?: if (repository is InMemorySessionRepository) InMemoryContentRepository() else DatabaseContentRepository()
     val contentService = ContentService(content, tenants, LocalMediaStorage(), clock)
     val lessonService = LessonService(tenants, repository, exerciseService, contentService, saasConfig, clock = clock)
@@ -148,7 +165,7 @@ fun Application.module(
         sessionRoutes(sessionService, exerciseService, eventHub, lessonService)
         sessionWebSocketRoutes(sessionService, exerciseService, whiteboardService, eventHub, json)
         contentRoutes(saasService, contentService)
-        saasRoutes(saasService, lessonService, contentService, limiter)
+        saasRoutes(saasService, lessonService, contentService, limiter, integrationService)
     }
 }
 
@@ -159,4 +176,5 @@ private fun io.ktor.server.application.ApplicationCall.isSaasPath(): Boolean = r
         it.startsWith("/api/v1/device-data") || it.startsWith("/api/v1/lessons") ||
         it.startsWith("/api/v1/device-lessons") || it.startsWith("/api/v1/exercises") ||
         it.startsWith("/api/v1/lesson-templates") || it.startsWith("/api/v1/media")
+        || it.startsWith("/api/v1/integrations")
 }
