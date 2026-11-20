@@ -80,6 +80,7 @@ private fun gridCenter(index: Int, count: Int, cols: Int, left: Int, top: Int, w
 fun hintPlan(state: ExerciseUiState): List<HintStep> {
     val exercise = state.exercise ?: return emptyList()
     val options = exercise.options
+    newGameHintPlan(state)?.let { return it }
     return when (exercise.activityType) {
         "MEMORY" -> {
             val deck = options.size * 2
