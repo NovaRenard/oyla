@@ -563,6 +563,20 @@ class GameActivitiesTest {
         val specialist = AuthorizedSession(session, DeviceRole.SPECIALIST)
         val child = AuthorizedSession(session, DeviceRole.CHILD)
 
+        init {
+            // These tests pin the hand-made (non-generated) behaviour of the seeded games, so V14's generate flag is switched off.
+            runBlocking {
+                repository.listExercises(center, kz.oyla.server.repository.ContentExerciseFilter()).filter { it.ownership == ContentOwnership.SYSTEM && it.gameConfig?.generate == true }
+                    .forEach { exercise ->
+                        // V14 dropped the hand-made COUNT number and SYLLABLES split; restore them from the stored options and the picture pool.
+                        val config = checkNotNull(exercise.gameConfig)
+                        val countValue = if (exercise.activityType == ActivityType.COUNT) exercise.options.single { it.isCorrect }.label!!.toInt() else config.countValue
+                        val syllables = if (exercise.activityType == ActivityType.SYLLABLES) kz.oyla.server.service.PicturePool.byKey(config.imageAssetKey)!!.syllables else config.syllables
+                        repository.insertExercise(exercise.copy(gameConfig = config.copy(generate = false, countValue = countValue, syllables = syllables)))
+                    }
+            }
+        }
+
         suspend fun loadTemplate(templateId: String) = plan(content.snapshotTemplate(center, UUID.fromString(templateId)).exercises)
         suspend fun loadSingle(templateId: String, index: Int) = plan(listOf(content.snapshotTemplate(center, UUID.fromString(templateId)).exercises[index]))
         private suspend fun plan(snapshots: List<ExerciseSnapshot>) {

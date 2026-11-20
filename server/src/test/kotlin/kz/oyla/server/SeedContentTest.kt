@@ -38,6 +38,9 @@ import kz.oyla.server.service.AuthorizedSession
 import kz.oyla.server.service.CenterContext
 import kz.oyla.server.service.ContentService
 import kz.oyla.server.service.ExerciseService
+import kz.oyla.server.service.GameGenerator
+import kz.oyla.server.service.PicturePool
+import kotlin.random.Random
 import kz.oyla.server.storage.LocalMediaStorage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -55,7 +58,7 @@ class SeedContentTest {
 
     @Test fun `every SYSTEM exercise passes the type-specific validation rules`() = runBlocking {
         val system = systemExercises()
-        assertEquals(59, system.size) // V8 5 + V11 6 + V12 4 + V13 44
+        assertEquals(94, system.size) // V8 5 + V11 6 + V12 4 + V13 44 + V14 35
         system.forEach { exercise ->
             val error = runCatching { service.validateDefinition(exercise.activityType, exercise.options, exercise.whiteboardConfig, exercise.gameConfig) }.exceptionOrNull()
             assertNull("${exercise.id} «${exercise.title}» is invalid: ${(error as? ApiException)?.clientMessage}", error)
@@ -121,17 +124,21 @@ class SeedContentTest {
 
     @Test fun `V13 game definitions carry the expected settings`() = runBlocking {
         suspend fun exercise(n: Int) = checkNotNull(repository.findExercise(id(n)))
-        assertEquals(listOf("БА", "РА", "БАН"), exercise(630).gameConfig?.syllables); assertEquals("exercise_drum", exercise(630).gameConfig?.imageAssetKey)
-        assertEquals(listOf("МА", "ШИ", "НА"), exercise(631).gameConfig?.syllables)
-        assertEquals(listOf("СО", "БА", "КА"), exercise(632).gameConfig?.syllables)
-        assertEquals(listOf("ЛУ", "НА"), exercise(633).gameConfig?.syllables)
+        // V14: SYLLABLES keep their picture as the generator constraint and take the syllables from the picture pool.
+        mapOf(630 to listOf("БА", "РА", "БАН"), 631 to listOf("МА", "ШИ", "НА"), 632 to listOf("СО", "БА", "КА"), 633 to listOf("ЛУ", "НА")).forEach { (n, syllables) ->
+            val config = checkNotNull(exercise(n).gameConfig)
+            assertTrue(config.generate); assertTrue(config.syllables.isEmpty())
+            assertEquals(syllables, kz.oyla.server.service.PicturePool.byKey(config.imageAssetKey)?.syllables)
+        }
+        assertEquals("exercise_drum", exercise(630).gameConfig?.imageAssetKey)
         mapOf(626 to "СОК", 627 to "ДОМ", 628 to "ЛУК", 629 to "СЫР").forEach { (n, word) ->
             val options = exercise(n).options
             assertEquals(word, options.filter { it.sequenceIndex != null }.sortedBy { it.sequenceIndex }.joinToString("") { it.label!! })
             assertEquals(2, options.count { it.sequenceIndex == null })
         }
+        // V14: COUNT keeps the picture, the number is generated.
         mapOf(619 to 3, 620 to 5, 621 to 2).forEach { (n, count) ->
-            assertEquals(count, exercise(n).gameConfig?.countValue)
+            assertNull(exercise(n).gameConfig?.countValue); assertTrue(exercise(n).gameConfig!!.generate)
             assertEquals(count.toString(), exercise(n).options.single { it.isCorrect }.label)
         }
         assertEquals(listOf("Фрукты", "Овощи"), exercise(625).gameConfig?.groupLabels)
@@ -160,6 +167,63 @@ class SeedContentTest {
         }
         val motor = service.snapshotTemplate(center, id(904)).exercises.map { it.activityType }.toSet()
         assertEquals(setOf(ActivityType.MAZE, ActivityType.WHITEBOARD), motor)
+    }
+
+    // ---------- V14 generated games ----------
+
+    @Test fun `V14 seeds the new generated games and templates`() = runBlocking {
+        val v14 = systemExercises().filter { it.id.toString().takeLast(3).toInt() in 701..799 }
+        val expected = mapOf(
+            ActivityType.MATH to 6, ActivityType.PAIRS to 2, ActivityType.PARTS to 2, ActivityType.TYPE_WORD to 3, ActivityType.PHONETICS to 3, ActivityType.LABEL_SCENE to 3,
+            ActivityType.BASKET to 4, ActivityType.CATEGORY_HOUSE to 3, ActivityType.MISSING to 3, ActivityType.PARKING to 3, ActivityType.ARROWS to 3
+        )
+        assertEquals(expected, v14.groupingBy { it.activityType }.eachCount())
+        v14.forEach { exercise ->
+            val config = checkNotNull(exercise.gameConfig)
+            assertTrue(exercise.title, config.generate); assertTrue(exercise.title, config.level in 1..3); assertTrue(exercise.options.isEmpty())
+            assertTrue(exercise.instructionText.length <= 80)
+        }
+        mapOf(701 to ("+" to 1), 702 to ("+" to 2), 703 to ("-" to 2), 704 to ("±" to 3), 705 to ("×" to 2)).forEach { (n, value) ->
+            val config = checkNotNull(repository.findExercise(id(n))?.gameConfig)
+            assertEquals(value, config.mathOp to config.level)
+        }
+        assertEquals("Сложение до 5", repository.findExercise(id(701))?.title)
+        assertEquals(listOf(1, 2, 3), (791..793).map { repository.findExercise(id(it))?.gameConfig?.level })
+        // Every existing SYSTEM game of a generator-backed type now generates its variant.
+        val generatedOld = systemExercises().filter { it.activityType in setOf(ActivityType.ODD_ONE, ActivityType.COUNT, ActivityType.MEMORY, ActivityType.SHADOW,
+            ActivityType.REMEMBER, ActivityType.SYLLABLES, ActivityType.WORD_BUILD, ActivityType.POP, ActivityType.SORT) }
+        assertEquals(34, generatedOld.size)
+        assertTrue(generatedOld.all { it.gameConfig?.generate == true })
+        assertEquals("animal", repository.findExercise(id(611))?.gameConfig?.category)
+        assertEquals("exercise_fish", repository.findExercise(id(310))?.gameConfig?.imageAssetKey)
+        assertEquals("Р", repository.findExercise(id(307))?.gameConfig?.sound)
+        assertEquals(listOf("Фрукты", "Овощи"), repository.findExercise(id(625))?.gameConfig?.groupLabels)
+        assertEquals("shape", repository.findExercise(id(302))?.gameConfig?.category)
+        // Templates 906..909 mix new and existing generated games.
+        val names = mapOf(906 to "Математика", 907 to "Буквы и слова", 908 to "Внимание и логика", 909 to "Перетаскивание")
+        names.forEach { (n, name) ->
+            val template = checkNotNull(repository.findTemplate(id(n)))
+            assertEquals(name, template.name); assertTrue(template.items.size in 5..7)
+            val types = template.items.map { checkNotNull(repository.findExercise(it.exerciseId)).activityType }
+            assertTrue(name, types.any { it.name in NewTypeNames } && types.any { it.name !in NewTypeNames })
+        }
+    }
+
+    @Test fun `every generated SYSTEM exercise generates valid variants with APK pictures only`() = runBlocking {
+        val generated = systemExercises().filter { it.gameConfig?.generate == true }
+        assertEquals(69, generated.size)
+        generated.forEach { exercise ->
+            repeat(25) { seed ->
+                val variant = GameGenerator.generate(exercise.activityType, exercise.gameConfig!!, Random(seed))
+                val keys = variant.options.mapNotNull { it.localImageAssetKey } + listOfNotNull(variant.gameConfig.imageAssetKey) + variant.gameConfig.requirements.map { it.imageAssetKey }
+                keys.forEach { assertTrue("${exercise.title}: $it is not shipped in the APK", it in ApkPictureKeys || it == GameGenerator.CandyKey) }
+                if (exercise.activityType == ActivityType.COUNT || exercise.activityType == ActivityType.ODD_ONE || exercise.activityType == ActivityType.REMEMBER || exercise.activityType.name in NewTypeNames.take(3))
+                    assertEquals(exercise.title, 1, variant.options.count { it.id == variant.correctOptionId })
+            }
+        }
+        PicturePool.Pictures.forEach { assertTrue(it.key, it.key in ApkPictureKeys) }
+        assertEquals(48, PicturePool.Pictures.size); assertEquals(PicturePool.Pictures.size, PicturePool.Pictures.map { it.key }.distinct().size)
+        PicturePool.Pictures.forEach { assertEquals(it.word, it.upperWord, it.syllables.joinToString("")) }
     }
 
     // ---------- whiteboard trace templates ----------
@@ -239,12 +303,13 @@ class SeedContentTest {
     }
 
     private companion object {
+        val NewTypeNames = listOf("MATH", "PAIRS", "PARTS", "TYPE_WORD", "PHONETICS", "LABEL_SCENE", "BASKET", "CATEGORY_HOUSE", "MISSING", "PARKING", "ARROWS")
         val SoundByAudio = mapOf("exercise_sound_r" to "р", "exercise_sound_l" to "л", "exercise_sound_s" to "с", "exercise_sound_sh" to "ш")
         val ApkPictureKeys = listOf(
             "fish", "apple", "ball", "duck", "lamp", "dog", "elephant", "pear", "banana", "car", "boat", "cat", "fox", "house", "rocket", "sun", "moon", "tree",
             "flower", "rose", "bus", "plane", "cow", "frog", "bear", "rabbit", "mouse", "owl", "crayfish", "carrot", "tomato", "grapes", "cheese", "onion", "cake",
             "drum", "spoon", "cup", "juice", "hat", "umbrella", "key"
-        ).map { "exercise_$it" }.toSet() + listOf("star", "circle", "square", "triangle").flatMap { shape ->
+        ).map { "exercise_$it" }.toSet() + kz.oyla.server.service.PicturePool.NewKeys + listOf("star", "circle", "square", "triangle").flatMap { shape ->
             listOf("blue", "red", "green", "yellow", "purple").map { color -> "shape_${shape}_$color" }
         }
     }

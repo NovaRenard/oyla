@@ -186,12 +186,13 @@ class PostgresSaasIntegrationTest {
         val contentService = ContentService(content, repository, LocalMediaStorage("build/integration-media"), clock)
         val games = contentService.snapshotTemplate(UUID.randomUUID(), UUID.fromString("00000000-0000-0000-0000-000000000501"))
         assertEquals(listOf(ActivityType.MEMORY, ActivityType.REMEMBER, ActivityType.ODD_ONE, ActivityType.SORT, ActivityType.MAZE, ActivityType.WORD_BUILD), games.exercises.map { it.activityType })
+        // V14: the SYSTEM games generate a fresh variant per lesson.
         assertEquals(3000, games.exercises[1].gameConfig?.showTargetMs)
-        assertEquals("00000000-0000-0000-0000-000000000411", games.exercises[1].correctOptionId)
-        assertEquals(listOf("A", "A", "B", "B"), games.exercises[3].options.map { it.groupKey })
+        assertEquals(1, games.exercises[1].options.count { it.id == games.exercises[1].correctOptionId }); assertEquals("shape", games.exercises[1].gameConfig?.category)
+        assertEquals(listOf("A", "A", "B", "B"), games.exercises[3].options.map { it.groupKey }.sortedBy { it })
         assertEquals(listOf("Р", "Л"), games.exercises[3].gameConfig?.groupLabels)
         assertEquals("wave", games.exercises[4].gameConfig?.mazeLayout)
-        assertEquals(listOf(1, 2, 3, null, null), games.exercises[5].options.map { it.sequenceIndex })
+        assertEquals(listOf(1, 2, 3), games.exercises[5].options.mapNotNull { it.sequenceIndex }.sorted()); assertEquals(5, games.exercises[5].options.size)
         assertEquals("exercise_cat", games.exercises[5].gameConfig?.imageAssetKey)
         assertEquals(5, contentService.snapshotTemplate(UUID.randomUUID(), UUID.fromString("00000000-0000-0000-0000-000000000502")).exercises.size)
 
@@ -223,15 +224,15 @@ class PostgresSaasIntegrationTest {
         assertEquals(listOf(ActivityType.POP, ActivityType.SYLLABLES, ActivityType.SHADOW, ActivityType.COUNT, ActivityType.MEMORY, ActivityType.ODD_ONE), funGames.exercises.map { it.activityType })
         assertEquals(listOf("307", "308", "309", "310", "301", "303").map { "00000000-0000-0000-0000-000000000$it" }, funGames.exercises.map { it.sourceExerciseId })
         val pop = funGames.exercises[0]
-        assertEquals(listOf("ракета", "кот", "рыба", "дом", "груша", "утка"), pop.options.map { it.label })
-        assertEquals(listOf(true, false, true, false, true, false), pop.options.map { it.isTarget })
+        assertEquals(6, pop.options.size); assertEquals("Р", pop.gameConfig?.sound)
+        pop.options.forEach { assertEquals(it.label!!.uppercase().contains("Р"), it.isTarget) }
         assertEquals(listOf("РА", "КЕ", "ТА"), funGames.exercises[1].gameConfig?.syllables)
         assertEquals("exercise_rocket", funGames.exercises[1].gameConfig?.imageAssetKey)
-        assertEquals(listOf("exercise_fish", "exercise_duck", "exercise_car"), funGames.exercises[2].options.map { it.localImageAssetKey })
+        assertEquals(3, funGames.exercises[2].options.size)
         val count = funGames.exercises[3]
-        assertEquals(4, count.gameConfig?.countValue); assertEquals("exercise_fish", count.gameConfig?.imageAssetKey)
-        assertEquals("00000000-0000-0000-0000-000000000474", count.correctOptionId)
-        assertEquals(listOf<String?>(null, null, null, null, null), count.options.map { it.localImageAssetKey })
+        assertTrue(count.gameConfig!!.countValue!! in 1..5); assertEquals("exercise_fish", count.gameConfig?.imageAssetKey)
+        assertEquals(count.gameConfig?.countValue.toString(), count.options.single { it.id == count.correctOptionId }.label)
+        assertTrue(count.options.all { it.localImageAssetKey == null })
         // The original V11 templates are untouched.
         assertEquals(6, contentService.snapshotTemplate(UUID.randomUUID(), UUID.fromString("00000000-0000-0000-0000-000000000501")).exercises.size)
 
@@ -251,7 +252,7 @@ class PostgresSaasIntegrationTest {
         assertEquals(2, content.findExercise(countId)?.gameConfig?.countValue)
         assertEquals("2", queryText("SELECT game_config->>'countValue' FROM content_exercises WHERE id = '$countId'"))
         assertEquals("[\"МА\", \"МА\"]", queryText("SELECT game_config->'syllables' FROM content_exercises WHERE id = '$syllablesId'"))
-        assertEquals(1, queryInt("SELECT COUNT(*) FROM content_exercises WHERE id = '00000000-0000-0000-0000-000000000310' AND game_config->>'countValue' = '4'"))
+        assertEquals(1, queryInt("SELECT COUNT(*) FROM content_exercises WHERE id = '00000000-0000-0000-0000-000000000310' AND game_config->>'generate' = 'true' AND game_config->>'countValue' IS NULL"))
 
         val sessionId = UUID.randomUUID(); val sessionExerciseId = UUID.randomUUID(); seedWhiteboardSession(sessionId, sessionExerciseId)
         val attempts = DatabaseExerciseRepository()
@@ -291,6 +292,30 @@ class PostgresSaasIntegrationTest {
         }
         val motor = contentService.snapshotTemplate(anyCenter, UUID.fromString("00000000-0000-0000-0000-000000000904"))
         assertEquals("sun", motor.exercises.first { it.sourceExerciseId.endsWith("638") }.whiteboardConfig?.traceTemplate)
+    }
+
+    @Test fun `V14 generated games are seeded and snapshot fresh variants from PostgreSQL`() = runBlocking {
+        val content = DatabaseContentRepository(); val anyCenter = UUID.randomUUID()
+        assertEquals(35, queryInt("SELECT COUNT(*) FROM content_exercises WHERE id::text BETWEEN '00000000-0000-0000-0000-000000000701' AND '00000000-0000-0000-0000-000000000799'"))
+        assertEquals(69, queryInt("SELECT COUNT(*) FROM content_exercises WHERE ownership = 'SYSTEM' AND game_config->>'generate' = 'true'"))
+        assertEquals("Запомни и найди: фигуры", queryText("SELECT title FROM content_exercises WHERE id = '00000000-0000-0000-0000-000000000634'"))
+        val arrows = checkNotNull(content.findExercise(UUID.fromString("00000000-0000-0000-0000-000000000793")))
+        assertEquals(ActivityType.ARROWS, arrows.activityType); assertEquals(GameExerciseConfig(generate = true, level = 3), arrows.gameConfig)
+        val contentService = ContentService(content, repository, LocalMediaStorage("build/integration-media"), clock)
+        listOf(906, 907, 908, 909).forEach { n ->
+            val id = UUID.fromString("00000000-0000-0000-0000-000000000%03d".format(n))
+            val first = contentService.snapshotTemplate(anyCenter, id); val second = contentService.snapshotTemplate(anyCenter, id)
+            assertTrue(first.exercises.size in 5..7)
+            assertTrue(first.exercises.all { it.gameConfig?.generate == true })
+            assertTrue(first.exercises.flatMap { it.options.map { option -> option.id } }.toSet().intersect(second.exercises.flatMap { it.options.map { option -> option.id } }.toSet()).isEmpty())
+        }
+        // A centre can store a generated new-type exercise with all its new fields.
+        val centerId = UUID.fromString(register("Generated", "generated@example.com").centerId())
+        val now = Instant.parse("2026-11-20T00:00:00Z"); val basketId = UUID.randomUUID()
+        val config = GameExerciseConfig(generate = true, level = 2, container = "bottle", requirements = listOf(kz.oyla.server.model.BasketNeed("exercise_apple", "яблоко", 2)),
+            blockedCells = listOf(3), diagonals = true, mathOp = "±", operandA = 1, operandB = 2, word = "КОТ", category = "fruit", categoryLabel = "Фрукты", gridSize = 5, startCell = 0, sound = "Р")
+        content.insertExercise(ContentExerciseRecord(basketId, centerId, ContentOwnership.CENTER, ActivityType.BASKET, "Сок", "Положи", null, null, ContentStatus.ACTIVE, now, now, gameConfig = config))
+        assertEquals(config, content.findExercise(basketId)?.gameConfig)
     }
 
     @Test fun `whiteboard trace template round-trips through PostgreSQL and is constrained`() = runBlocking {

@@ -6,7 +6,10 @@ import kotlinx.serialization.Serializable
 
 /** The ownership boundary is deliberately explicit in every content table. */
 @Serializable enum class ContentOwnership { SYSTEM, CENTER }
-@Serializable enum class ActivityType { SINGLE_CHOICE, WHITEBOARD, ODD_ONE, REMEMBER, MEMORY, SORT, WORD_BUILD, MAZE, POP, SYLLABLES, SHADOW, COUNT }
+@Serializable enum class ActivityType {
+    SINGLE_CHOICE, WHITEBOARD, ODD_ONE, REMEMBER, MEMORY, SORT, WORD_BUILD, MAZE, POP, SYLLABLES, SHADOW, COUNT,
+    MATH, PAIRS, PARTS, TYPE_WORD, PHONETICS, LABEL_SCENE, BASKET, CATEGORY_HOUSE, MISSING, PARKING, ARROWS
+}
 @Serializable enum class ContentStatus { ACTIVE, ARCHIVED }
 @Serializable enum class MediaType { IMAGE, AUDIO }
 @Serializable enum class WhiteboardColor { BLACK, BLUE, GREEN, RED, ORANGE, PURPLE }
@@ -57,16 +60,56 @@ data class GameExerciseConfig(
     /** SYLLABLES only: 2..6 syllables of the pictured word, e.g. ["РА","КЕ","ТА"]. */
     val syllables: List<String> = emptyList(),
     /** COUNT only: 1..10, equals the label of the correct option. */
-    val countValue: Int? = null
+    val countValue: Int? = null,
+    /** A concrete variant is generated at session start (see GameGenerator); set fields below act as constraints. */
+    val generate: Boolean = false,
+    /** 1..3 generator difficulty, 1 when null. */
+    val level: Int? = null,
+    /** MATH: "+", "-", "×"; content may also say "±" (mixed). Sessions always carry a concrete operator. */
+    val mathOp: String? = null,
+    /** MATH: example operands; PAIRS: how many cups (A) and plates (B). */
+    val operandA: Int? = null,
+    val operandB: Int? = null,
+    /** TYPE_WORD, PHONETICS: the word in upper case. */
+    val word: String? = null,
+    /** Picture pool category key (see PicturePool.Categories). */
+    val category: String? = null,
+    /** Child-facing label of [category], e.g. «Фрукты». */
+    val categoryLabel: String? = null,
+    /** BASKET: what must be put into the container. */
+    val requirements: List<BasketNeed> = emptyList(),
+    /** BASKET: "basket" or "bottle". */
+    val container: String? = null,
+    /** ARROWS: side of the square board. */
+    val gridSize: Int? = null,
+    /** ARROWS: start cell index (row * gridSize + col). */
+    val startCell: Int? = null,
+    /** ARROWS: stones. */
+    val blockedCells: List<Int> = emptyList(),
+    /** ARROWS: diagonal arrows are available. */
+    val diagonals: Boolean = false,
+    /** POP generation: the sound (a single upper-case letter). */
+    val sound: String? = null
 ) {
     companion object {
         val MazeLayouts = setOf("wave", "zigzag", "spiral")
         const val DefaultShowTargetMs = 3000
+        val Containers = setOf("basket", "bottle")
+        val ParkingColors = listOf("RED", "BLUE", "YELLOW", "GREEN", "ORANGE", "PURPLE", "PINK")
     }
 }
 
+/** BASKET: put [count] pictures [imageAssetKey] («[label]») into the container. */
+@Serializable
+data class BasketNeed(val imageAssetKey: String, val label: String, val count: Int)
+
 /** Activity types the child answers through the attempts API. */
-val ActivityType.isChoiceLike: Boolean get() = this == ActivityType.SINGLE_CHOICE || this == ActivityType.ODD_ONE || this == ActivityType.REMEMBER || this == ActivityType.COUNT
+val ActivityType.isChoiceLike: Boolean get() = this == ActivityType.SINGLE_CHOICE || this == ActivityType.ODD_ONE || this == ActivityType.REMEMBER || this == ActivityType.COUNT ||
+    this == ActivityType.MATH || this == ActivityType.PAIRS || this == ActivityType.PARTS
+/** Types that exist only as generated content: centres must create them with generate = true. */
+val ActivityType.isGeneratedOnly: Boolean get() = this in GeneratedOnlyTypes
+private val GeneratedOnlyTypes = setOf(ActivityType.MATH, ActivityType.PAIRS, ActivityType.PARTS, ActivityType.TYPE_WORD, ActivityType.PHONETICS,
+    ActivityType.LABEL_SCENE, ActivityType.BASKET, ActivityType.CATEGORY_HOUSE, ActivityType.MISSING, ActivityType.PARKING, ActivityType.ARROWS)
 val ActivityType.isGame: Boolean get() = this != ActivityType.SINGLE_CHOICE && this != ActivityType.WHITEBOARD
 
 data class MediaAssetRecord(
@@ -160,8 +203,10 @@ data class ExerciseSnapshotOption(
     val position: Int,
     val groupKey: String? = null,
     val sequenceIndex: Int? = null,
-    /** POP only: copied from the option's isCorrect (a balloon that must be popped); null otherwise. */
-    val isTarget: Boolean? = null
+    /** POP, CATEGORY_HOUSE, MISSING: a balloon to pop / an item of the category / a missing item; null otherwise. */
+    val isTarget: Boolean? = null,
+    /** LABEL_SCENE, MISSING, ARROWS: cell of the scene or board. */
+    val cellIndex: Int? = null
 )
 
 data class LessonTemplateSnapshot(

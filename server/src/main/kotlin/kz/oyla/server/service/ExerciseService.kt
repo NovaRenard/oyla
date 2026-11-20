@@ -13,6 +13,7 @@ import kz.oyla.server.model.isGame
 import kz.oyla.server.model.SessionStatus
 import kz.oyla.server.model.dto.AnswerExerciseRequest
 import kz.oyla.server.model.dto.AnswerExerciseResponse
+import kz.oyla.server.model.dto.BasketNeedDto
 import kz.oyla.server.model.dto.ExerciseDto
 import kz.oyla.server.model.dto.ExerciseOptionDto
 import kz.oyla.server.model.dto.ExerciseStateResponse
@@ -45,6 +46,13 @@ class ExerciseService(
         const val GroupB = "B"
         const val MazeFinish = "finish"
         const val MazeOffPath = "off_path"
+        /** ARROWS: the mascot crashed into a stone, left the board or looped. */
+        const val ArrowsCrash = "CRASH"
+        /** Types whose moves carry a second value (card, group, slot, colour, object, spot colour). */
+        private val SecondaryTypes = setOf(ActivityType.MEMORY, ActivityType.SORT, ActivityType.SHADOW, ActivityType.PHONETICS, ActivityType.LABEL_SCENE, ActivityType.PARKING)
+        /** Types that expose [kz.oyla.server.model.ExerciseSnapshotOption.isTarget] to both tablets. */
+        private val TargetTypes = setOf(ActivityType.POP, ActivityType.CATEGORY_HOUSE, ActivityType.MISSING)
+        private val PhoneticColors = mapOf("V" to "красный", "C" to "синий", "H" to "синий", "S" to "зелёный")
         private val TapCountPattern = Regex("[0-9]{1,2}")
     }
 
@@ -135,8 +143,8 @@ class ExerciseService(
                 ?: throw ApiException.notFound("Упражнение занятия не найдено")
             val type = record.activityType()
             if (type == ActivityType.WHITEBOARD) throw ApiException.conflict("Это упражнение завершается специалистом")
-            // Only MEMORY, SORT and SHADOW carry a second value; for the rest it is ignored and never persisted.
-            val secondary = request.secondaryValue.takeIf { type == ActivityType.MEMORY || type == ActivityType.SORT || type == ActivityType.SHADOW }
+            // Only the SecondaryTypes carry a second value; for the rest it is ignored and never persisted.
+            val secondary = request.secondaryValue.takeIf { type in SecondaryTypes }
             exercises.findAttemptByClientEventId(eventId)?.let { duplicate ->
                 if (duplicate.sessionExerciseId != sessionExerciseId || duplicate.selectedOptionId != request.selectedOptionId || duplicate.secondaryValue != secondary) {
                     throw ApiException.badRequest("Некорректный повтор ответа")
@@ -217,6 +225,47 @@ class ExerciseService(
                 MazeOffPath -> false
                 else -> throw ApiException.badRequest("Некорректное действие в лабиринте")
             }
+            ActivityType.TYPE_WORD -> {
+                val key = options.firstOrNull { it.id == selectedOptionId } ?: throw foreignOption()
+                // Letters may repeat in a word, so the same key may be pressed again.
+                val expected = checkNotNull(record.snapshot).gameConfig?.word.orEmpty().getOrNull(solved.size) ?: return false
+                key.label.orEmpty().equals(expected.toString(), ignoreCase = true)
+            }
+            ActivityType.PHONETICS -> {
+                val letter = options.firstOrNull { it.id == selectedOptionId } ?: throw foreignOption()
+                if (secondary == null || secondary !in checkNotNull(record.snapshot).gameConfig?.groupLabels.orEmpty()) throw ApiException.badRequest("Нужно указать цвет из палитры")
+                if (letter.id in solved) throw ApiException.conflict("Уже раскрашено")
+                letter.groupKey == secondary
+            }
+            ActivityType.LABEL_SCENE -> {
+                val word = options.firstOrNull { it.id == selectedOptionId } ?: throw foreignOption()
+                val target = options.firstOrNull { it.id == secondary } ?: throw foreignOption()
+                if (word.id in solved) throw ApiException.conflict("Уже подписано")
+                word.id == target.id
+            }
+            ActivityType.BASKET -> {
+                val item = options.firstOrNull { it.id == selectedOptionId } ?: throw foreignOption()
+                if (item.id in solved) throw ApiException.conflict("Уже в корзинке")
+                val need = checkNotNull(record.snapshot).gameConfig?.requirements.orEmpty().firstOrNull { it.imageAssetKey == item.localImageAssetKey } ?: return false
+                val placed = solved.count { id -> options.firstOrNull { it.id == id }?.localImageAssetKey == need.imageAssetKey }
+                placed < need.count
+            }
+            ActivityType.CATEGORY_HOUSE, ActivityType.MISSING -> {
+                val item = options.firstOrNull { it.id == selectedOptionId } ?: throw foreignOption()
+                if (item.id in solved) throw ApiException.conflict("Уже выбрано")
+                item.isTarget == true
+            }
+            ActivityType.PARKING -> {
+                val car = options.firstOrNull { it.id == selectedOptionId } ?: throw foreignOption()
+                if (secondary == null || secondary !in checkNotNull(record.snapshot).gameConfig?.groupLabels.orEmpty()) throw ApiException.badRequest("Нужно указать цвет места")
+                if (car.id in solved) throw ApiException.conflict("Машинка уже на месте")
+                car.groupKey == secondary
+            }
+            ActivityType.ARROWS -> {
+                if (selectedOptionId == ArrowsCrash) return false
+                val candy = options.firstOrNull { it.id == selectedOptionId } ?: throw foreignOption()
+                candy.id == options.sortedBy { it.position }.firstOrNull { it.id !in solved }?.id
+            }
             else -> throw ApiException.conflict("Это упражнение завершается специалистом")
         }
     }
@@ -232,6 +281,10 @@ class ExerciseService(
             ActivityType.MEMORY, ActivityType.SORT, ActivityType.SHADOW -> correct.distinct().let { GameProgress(it.size, options.size, it) }
             ActivityType.POP -> correct.distinct().let { GameProgress(it.size, options.count { option -> option.isTarget == true }, it) }
             ActivityType.WORD_BUILD -> GameProgress(correct.size, options.count { it.sequenceIndex != null }, correct)
+            ActivityType.TYPE_WORD -> GameProgress(correct.size, record.snapshot?.gameConfig?.word.orEmpty().length, correct)
+            ActivityType.PHONETICS, ActivityType.LABEL_SCENE, ActivityType.PARKING, ActivityType.ARROWS -> correct.distinct().let { GameProgress(it.size, options.size, it) }
+            ActivityType.CATEGORY_HOUSE, ActivityType.MISSING -> correct.distinct().let { GameProgress(it.size, options.count { option -> option.isTarget == true }, it) }
+            ActivityType.BASKET -> correct.distinct().let { GameProgress(it.size, record.snapshot?.gameConfig?.requirements.orEmpty().sumOf { need -> need.count }, it) }
             else -> GameProgress(if (correct.isEmpty()) 0 else 1, 1, emptyList())
         }
     }
@@ -344,7 +397,7 @@ class ExerciseService(
                 val snapshot = checkNotNull(record.snapshot)
                 val incorrect = attempts.count { !it.isCorrect }
                 val duration = Duration.between(startedAt, completedAt).toMillis().coerceAtLeast(0)
-                val correctLabel = if (snapshot.activityType == ActivityType.ODD_ONE || snapshot.activityType == ActivityType.REMEMBER || snapshot.activityType == ActivityType.COUNT) {
+                val correctLabel = if (snapshot.activityType.isChoiceLike) {
                     snapshot.options.firstOrNull { it.id == snapshot.correctOptionId }?.label
                 } else null
                 add(ExerciseSummaryItemDto(
@@ -390,7 +443,7 @@ class ExerciseService(
         ExerciseDto(snapshot.sourceExerciseId, snapshot.instructionText, snapshot.localAudioAssetKey,
             snapshot.options.sortedBy { it.position }.map { option ->
                 ExerciseOptionDto(option.id, option.label.orEmpty(), option.localImageAssetKey.orEmpty(), option.position, option.imageUrl, option.groupKey, option.sequenceIndex,
-                    isTarget = if (snapshot.activityType == ActivityType.POP) option.isTarget == true else null)
+                    isTarget = if (snapshot.activityType in TargetTypes) option.isTarget == true else null, cellIndex = option.cellIndex)
             },
             snapshot.title, snapshot.activityType.name, snapshot.audioUrl, snapshot.whiteboardConfig?.toDto(), gameConfigDto(snapshot))
     } ?: definition.toDto()
@@ -406,7 +459,11 @@ class ExerciseService(
             mazeLayout = config.mazeLayout, imageAssetKey = config.imageAssetKey, imageAssetId = config.imageAssetId,
             imageUrl = config.imageUrl ?: config.imageAssetId?.let { "/api/v1/media/$it" },
             targetOptionId = if (remember) snapshot.correctOptionId else null,
-            syllables = config.syllables, countValue = config.countValue
+            syllables = config.syllables, countValue = config.countValue,
+            generate = config.generate, level = config.level, mathOp = config.mathOp, operandA = config.operandA, operandB = config.operandB,
+            word = config.word, category = config.category, categoryLabel = config.categoryLabel,
+            requirements = config.requirements.map { BasketNeedDto(it.imageAssetKey, it.label, it.count) }, container = config.container,
+            gridSize = config.gridSize, startCell = config.startCell, blockedCells = config.blockedCells, diagonals = config.diagonals, sound = config.sound
         )
     }
 
@@ -427,7 +484,22 @@ class ExerciseService(
                 "$picture → $shadow"
             }
             ActivityType.SYLLABLES -> optionId.toIntOrNull()?.let { "$it ${beatsWord(it)}" } ?: optionId
-            ActivityType.MEMORY, ActivityType.WORD_BUILD, ActivityType.POP -> snapshot?.options?.firstOrNull { it.id == optionId }?.label ?: optionId
+            ActivityType.PHONETICS -> {
+                val letter = snapshot?.options?.firstOrNull { it.id == optionId }?.label ?: optionId
+                "$letter → ${PhoneticColors[attempt.secondaryValue] ?: attempt.secondaryValue.orEmpty()}"
+            }
+            ActivityType.LABEL_SCENE -> {
+                val word = snapshot?.options?.firstOrNull { it.id == optionId }?.label ?: optionId
+                val target = snapshot?.options?.firstOrNull { it.id == attempt.secondaryValue }?.label ?: attempt.secondaryValue.orEmpty()
+                "$word → $target"
+            }
+            ActivityType.PARKING -> {
+                val car = snapshot?.options?.firstOrNull { it.id == optionId }?.label ?: optionId
+                "$car → ${attempt.secondaryValue?.let { GameGenerator.spotAdjective(it) }.orEmpty()} место"
+            }
+            ActivityType.ARROWS -> if (optionId == ArrowsCrash) "Врезался" else snapshot?.options?.firstOrNull { it.id == optionId }?.label ?: optionId
+            ActivityType.MEMORY, ActivityType.WORD_BUILD, ActivityType.POP, ActivityType.TYPE_WORD, ActivityType.BASKET, ActivityType.CATEGORY_HOUSE, ActivityType.MISSING ->
+                snapshot?.options?.firstOrNull { it.id == optionId }?.label ?: optionId
             else -> definitionFor(record).options.firstOrNull { it.id == optionId }?.label ?: optionId
         }
     }
