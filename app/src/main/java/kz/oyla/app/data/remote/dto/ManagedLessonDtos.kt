@@ -32,8 +32,10 @@ import kz.oyla.app.domain.model.DeviceRole
     val name: String,
     val description: String? = null,
     val ownership: String,
-    val exerciseCount: Int
+    val exerciseCount: Int,
+    val exercises: List<DeviceTemplateExercise> = emptyList()
 )
+@Serializable data class DeviceTemplateExercise(val title: String, val activityType: String)
 
 @Serializable data class CreateDeviceLessonRequest(
     val specialistId: String,

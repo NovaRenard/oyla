@@ -122,5 +122,8 @@ import kz.oyla.server.model.WhiteboardColor
     val name: String,
     val description: String? = null,
     val ownership: ContentOwnership,
-    val exerciseCount: Int
+    val exerciseCount: Int,
+    /** Exercises in lesson order, so the tablet can show what is inside the lesson. */
+    val exercises: List<DeviceTemplateExerciseDto> = emptyList()
 )
+@Serializable data class DeviceTemplateExerciseDto(val title: String, val activityType: String)

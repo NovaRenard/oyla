@@ -54,6 +54,11 @@ fun SpecialistWaitingScreen(
             onOpenExercise()
         }
     }
+    // Managed lessons: as soon as the child tablet joins, go straight to the control panel.
+    LaunchedEffect(state.session?.childConnected, state.session?.connectionCode) {
+        val session = state.session
+        if (session != null && session.connectionCode == null && session.childConnected && !state.exercise.planCompleted) onOpenExercise()
+    }
     LaunchedEffect(state.sessionEndedId) {
         if (state.sessionEndedId != null) {
             viewModel.consumeSessionEnd()

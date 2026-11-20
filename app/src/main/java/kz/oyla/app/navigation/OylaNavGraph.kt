@@ -128,14 +128,16 @@ fun OylaNavGraph(
                         navController.navigate(OylaDestination.SPECIALIST_WAITING.route) { launchSingleTop = true }
                     }
                 }
-                SpecialistHomeScreen(
-                    onNewLesson = {
-                        navController.navigate(OylaDestination.SELECT_SPECIALIST.route)
-                    },
+                // One screen instead of the old step-by-step wizard: child + lesson → «Начать».
+                kz.oyla.app.ui.lesson.NewLessonScreen(
+                    viewModel = lessonLaunchViewModel,
                     centerName = centerName,
-                    deviceName = deviceName,
                     onOpenSettings = {
                         navController.navigate(OylaDestination.SPECIALIST_SETTINGS.route)
+                    },
+                    onStarted = { lesson ->
+                        specialistViewModel.startManagedLesson(lesson)
+                        navController.navigate(OylaDestination.SPECIALIST_WAITING.route) { launchSingleTop = true }
                     }
                 )
             }

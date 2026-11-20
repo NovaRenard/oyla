@@ -31,6 +31,7 @@ data class ManagedLessonLaunchState(
     val childDeviceId: String? = null,
     val lessonTemplateId: String? = null,
     val isLoading: Boolean = false,
+    val devicesLoaded: Boolean = false,
     val errorMessage: String? = null,
     val createdLesson: DeviceLessonResponse? = null,
     val recoveredLesson: DeviceLessonResponse? = null
@@ -50,8 +51,8 @@ class ManagedLessonLaunchViewModel(
     private val _uiState = MutableStateFlow(ManagedLessonLaunchState())
     val uiState = _uiState.asStateFlow()
 
-    fun loadCatalog() {
-        if (_uiState.value.isLoading || (_uiState.value.children.isNotEmpty() && _uiState.value.specialists.isNotEmpty() && _uiState.value.templates.isNotEmpty())) return
+    fun loadCatalog(force: Boolean = false) {
+        if (_uiState.value.isLoading || (!force && _uiState.value.children.isNotEmpty() && _uiState.value.specialists.isNotEmpty() && _uiState.value.templates.isNotEmpty())) return
         _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
         viewModelScope.launch {
             val children = gateway.children(deviceToken)
@@ -63,7 +64,10 @@ class ManagedLessonLaunchViewModel(
                     children = children.data,
                     specialists = specialists.data,
                     templates = templates.data,
-                    specialistId = _uiState.value.specialistId ?: lastSpecialist?.takeIf { id -> specialists.data.any { it.id == id } },
+                    specialistId = _uiState.value.specialistId
+                        ?: lastSpecialist?.takeIf { id -> specialists.data.any { it.id == id } }
+                        ?: specialists.data.singleOrNull()?.id,
+                    childId = _uiState.value.childId ?: children.data.singleOrNull()?.id,
                     lessonTemplateId = _uiState.value.lessonTemplateId?.takeIf { id -> templates.data.any { it.id == id } },
                     isLoading = false
                 )
@@ -75,16 +79,37 @@ class ManagedLessonLaunchViewModel(
         _uiState.value = _uiState.value.copy(specialistId = id, errorMessage = null)
         viewModelScope.launch { lastSpecialists.saveLastSpecialistId(id) }
     }
-    fun selectChild(id: String) { _uiState.value = _uiState.value.copy(childId = id, childDeviceId = null, errorMessage = null) }
+    fun selectChild(id: String) { _uiState.value = _uiState.value.copy(childId = id, errorMessage = null) }
     fun selectChildDevice(id: String) { _uiState.value = _uiState.value.copy(childDeviceId = id, errorMessage = null) }
     fun selectTemplate(id: String) { _uiState.value = _uiState.value.copy(lessonTemplateId = id, errorMessage = null) }
+
+    private var devicePolling: Job? = null
+
+    /** Keeps the list of free child tablets fresh and picks one automatically. */
+    fun watchChildDevices() {
+        if (devicePolling?.isActive == true) return
+        devicePolling = viewModelScope.launch {
+            while (isActive) { refreshChildDevices(); delay(4_000) }
+        }
+    }
+    fun stopWatchingChildDevices() { devicePolling?.cancel(); devicePolling = null }
+
+    private suspend fun refreshChildDevices() {
+        when (val result = gateway.availableChildDevices(deviceToken)) {
+            is NetworkResult.Success -> {
+                val current = _uiState.value.childDeviceId?.takeIf { id -> result.data.any { it.id == id } }
+                _uiState.value = _uiState.value.copy(childDevices = result.data, childDeviceId = current ?: result.data.firstOrNull()?.id, devicesLoaded = true)
+            }
+            else -> _uiState.value = _uiState.value.copy(devicesLoaded = true)
+        }
+    }
 
     fun loadAvailableChildDevices() {
         if (_uiState.value.isLoading) return
         _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
         viewModelScope.launch {
             when (val result = gateway.availableChildDevices(deviceToken)) {
-                is NetworkResult.Success -> _uiState.value = _uiState.value.copy(childDevices = result.data, isLoading = false)
+                is NetworkResult.Success -> _uiState.value = _uiState.value.copy(childDevices = result.data, isLoading = false, devicesLoaded = true)
                 else -> _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = errorMessage(result))
             }
         }
@@ -121,6 +146,7 @@ class ManagedLessonLaunchViewModel(
     }
 
     fun consumeCreatedLesson() { _uiState.value = _uiState.value.copy(createdLesson = null) }
+    fun retryCatalog() { _uiState.value = _uiState.value.copy(errorMessage = null); loadCatalog(force = true) }
     fun consumeRecoveredLesson() { _uiState.value = _uiState.value.copy(recoveredLesson = null) }
 
     private fun errorMessage(vararg results: NetworkResult<*>): String = results.firstOrNull { it !is NetworkResult.Success }.let(::errorMessage)

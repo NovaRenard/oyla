@@ -159,7 +159,9 @@ class ContentService(
     }
 
     suspend fun deviceTemplates(centerId: UUID): List<DeviceLessonTemplateDto> = repository.listTemplates(centerId, LessonTemplateFilter(status = ContentStatus.ACTIVE)).map {
-        DeviceLessonTemplateDto(it.id.toString(),it.name,it.description,it.ownership,it.items.size)
+        val exercises=it.items.sortedBy{item->item.position}.mapNotNull{item->repository.findExerciseAccessible(centerId,item.exerciseId)}
+            .map{exercise->kz.oyla.server.model.dto.DeviceTemplateExerciseDto(exercise.title,exercise.activityType.name)}
+        DeviceLessonTemplateDto(it.id.toString(),it.name,it.description,it.ownership,it.items.size,exercises)
     }
 
     /** Called before managed-session creation; all mutable definitions are copied here. */
