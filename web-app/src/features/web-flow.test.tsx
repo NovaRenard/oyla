@@ -168,13 +168,15 @@ describe("WHITEBOARD content flow", () => {
 describe("CRM integration settings", () => {
   it("tests a key before connecting and never renders the saved key", async () => {
     let submitted: unknown;
+    const savedIntegration = { id: "crm-1", type: "CUSTOM_CRM", name: "CRM", baseUrl: "https://crm.example.kz", status: "ACTIVE", hasCredential: true };
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.includes("/refresh")) return Promise.resolve(json(auth));
       if (url.includes("/auth/me")) return Promise.resolve(json({ user: auth.user, centers: auth.centers, activeCenter: auth.activeCenter }));
-      if (url.endsWith("/integrations/crm") && (!init?.method || init.method === "GET")) return Promise.resolve(empty());
+      // After a successful POST the server returns the saved integration on refetch.
+      if (url.endsWith("/integrations/crm") && (!init?.method || init.method === "GET")) return Promise.resolve(submitted ? json(savedIntegration) : empty());
       if (url.endsWith("/integrations/crm/test")) return Promise.resolve(json({ status: "SUCCESS" }));
-      if (url.endsWith("/integrations/crm") && init?.method === "POST") { submitted = JSON.parse(String(init.body)); return Promise.resolve(json({ id: "crm-1", type: "CUSTOM_CRM", name: "CRM", baseUrl: "https://crm.example.kz", status: "ACTIVE", hasCredential: true })); }
+      if (url.endsWith("/integrations/crm") && init?.method === "POST") { submitted = JSON.parse(String(init.body)); return Promise.resolve(json(savedIntegration)); }
       return Promise.resolve(json({}));
     }));
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ToastProvider><AuthProvider><MemoryRouter><CrmIntegrationPage /></MemoryRouter></AuthProvider></ToastProvider></QueryClientProvider>);
