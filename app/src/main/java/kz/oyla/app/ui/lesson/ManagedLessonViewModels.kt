@@ -31,6 +31,7 @@ data class ManagedLessonLaunchState(
     val childDeviceId: String? = null,
     val lessonTemplateId: String? = null,
     val isLoading: Boolean = false,
+    val catalogLoading: Boolean = false,
     val devicesLoaded: Boolean = false,
     val errorMessage: String? = null,
     val createdLesson: DeviceLessonResponse? = null,
@@ -51,10 +52,13 @@ class ManagedLessonLaunchViewModel(
     private val _uiState = MutableStateFlow(ManagedLessonLaunchState())
     val uiState = _uiState.asStateFlow()
 
+    // Own guard: restoreCurrentLesson() runs at the same moment and must not swallow the catalog load.
+    private var catalogJob: Job? = null
+
     fun loadCatalog(force: Boolean = false) {
-        if (_uiState.value.isLoading || (!force && _uiState.value.children.isNotEmpty() && _uiState.value.specialists.isNotEmpty() && _uiState.value.templates.isNotEmpty())) return
-        _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
-        viewModelScope.launch {
+        if (catalogJob?.isActive == true || (!force && _uiState.value.children.isNotEmpty() && _uiState.value.specialists.isNotEmpty() && _uiState.value.templates.isNotEmpty())) return
+        _uiState.value = _uiState.value.copy(errorMessage = null, catalogLoading = true)
+        catalogJob = viewModelScope.launch {
             val children = gateway.children(deviceToken)
             val specialists = gateway.specialists(deviceToken)
             val templates = gateway.lessonTemplates(deviceToken)
@@ -69,9 +73,9 @@ class ManagedLessonLaunchViewModel(
                         ?: specialists.data.singleOrNull()?.id,
                     childId = _uiState.value.childId ?: children.data.singleOrNull()?.id,
                     lessonTemplateId = _uiState.value.lessonTemplateId?.takeIf { id -> templates.data.any { it.id == id } },
-                    isLoading = false
+                    catalogLoading = false
                 )
-            } else _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = errorMessage(children, specialists, templates))
+            } else _uiState.value = _uiState.value.copy(catalogLoading = false, errorMessage = errorMessage(children, specialists, templates))
         }
     }
 

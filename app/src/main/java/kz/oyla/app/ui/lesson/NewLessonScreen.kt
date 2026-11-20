@@ -167,7 +167,7 @@ fun NewLessonScreen(
             // Lessons.
             Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 SectionTitle("Что делаем · ${state.templates.size} занятий")
-                if (state.isLoading && state.templates.isEmpty()) CircularProgressIndicator(color = OylaBlue)
+                if (state.catalogLoading && state.templates.isEmpty()) CircularProgressIndicator(color = OylaBlue)
                 state.errorMessage?.let { message ->
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text(message, color = Color(0xFFC62828), modifier = Modifier.weight(1f))
