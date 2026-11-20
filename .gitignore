@@ -27,3 +27,6 @@
 local.properties
 /.tools/
 /deploy/.env.local-test
+
+# Release signing key (back it up! needed for every update and Google Play)
+/.signing/
