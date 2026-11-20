@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, messageForError } from "../../api/client";
-import { activityTypeLabel, isGameActivity, type ActivityType, type ContentExercise, type ContentExerciseOption, type LessonTemplate, type WhiteboardColor, type WhiteboardExerciseConfig } from "../../api/types";
+import { activityTypeLabel, isGameActivity, type ActivityType, type ContentExercise, type ContentExerciseOption, type GameExerciseConfig, type LessonTemplate, type WhiteboardColor, type WhiteboardExerciseConfig } from "../../api/types";
 import { Failure, PageLoading } from "../dashboard/DashboardPage";
 
 const canEdit = (role?: string | null) => role === "OWNER" || role === "ADMIN" || role === "METHODIST";
@@ -65,12 +65,28 @@ function WhiteboardEditor({ config, readOnly, uploading, onUpload, onChange }: {
 }
 
 /** Read-only view of game exercises: the web editor does not author these types yet. */
+const LEVEL_LABELS: Record<number, string> = { 1: "лёгкий", 2: "средний", 3: "сложный" };
+const CATEGORY_LABELS: Record<string, string> = { fruit: "Фрукты", vegetable: "Овощи", food: "Еда", animal: "Животные", transport: "Транспорт", thing: "Вещи", nature: "Природа" };
+
+/** Generated games have no fixed cards: the server draws a new variant for every lesson. */
+function GeneratedGameNote({ config }: { config: GameExerciseConfig }) {
+  const facts = [
+    `Уровень: ${LEVEL_LABELS[config.level ?? 1] ?? config.level}`,
+    config.category ? `Тема: ${CATEGORY_LABELS[config.category] ?? config.category}` : undefined,
+    config.mathOp ? `Действие: ${config.mathOp === "±" ? "плюс и минус" : config.mathOp}` : undefined,
+    config.sound ? `Звук: ${config.sound}` : undefined,
+    config.groupLabels?.length ? `Группы: ${config.groupLabels.join(" и ")}` : undefined,
+  ].filter(Boolean);
+  return <><p className="muted">Каждое занятие получает новый случайный вариант: картинки, числа и порядок подбираются автоматически.</p><ul>{facts.map(fact => <li key={fact}>{fact}</li>)}</ul></>;
+}
+
 function GameExercisePreview({ exercise }: { exercise?: ContentExercise }) {
   if (!exercise) return null;
   const config = exercise.gameConfig;
   const options = [...exercise.options].sort((a, b) => a.sortOrder - b.sortOrder);
   const groupLabel = (key?: string) => key === "A" ? config?.groupLabels?.[0] ?? "A" : key === "B" ? config?.groupLabels?.[1] ?? "B" : undefined;
   const mazeLabels: Record<string, string> = { wave: "Волна", zigzag: "Зигзаг", spiral: "Спираль" };
+  if (config?.generate) return <><h2>{activityTypeLabel(exercise.activityType)}</h2><GeneratedGameNote config={config} /></>;
   return <><h2>{activityTypeLabel(exercise.activityType)}</h2>
     {exercise.activityType === "MAZE" && <p className="muted">Форма дорожки: {mazeLabels[config?.mazeLayout ?? ""] ?? config?.mazeLayout ?? "—"}</p>}
     {exercise.activityType === "REMEMBER" && <p className="muted">Картинка показывается {((config?.showTargetMs ?? 3000) / 1000).toLocaleString("ru-RU")} с</p>}

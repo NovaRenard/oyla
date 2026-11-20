@@ -2,9 +2,10 @@ export type DeviceRole = "CHILD" | "SPECIALIST";
 export type DeviceStatus = "ACTIVE" | "BLOCKED" | "UNLINKED";
 export type CatalogStatus = "ACTIVE" | "ARCHIVED";
 export type ContentOwnership = "SYSTEM" | "CENTER";
-export type ActivityType = "SINGLE_CHOICE" | "WHITEBOARD" | "ODD_ONE" | "REMEMBER" | "MEMORY" | "SORT" | "WORD_BUILD" | "MAZE" | "POP" | "SYLLABLES" | "SHADOW" | "COUNT";
+export type ActivityType = "SINGLE_CHOICE" | "WHITEBOARD" | "ODD_ONE" | "REMEMBER" | "MEMORY" | "SORT" | "WORD_BUILD" | "MAZE" | "POP" | "SYLLABLES" | "SHADOW" | "COUNT"
+  | "MATH" | "PAIRS" | "PARTS" | "TYPE_WORD" | "PHONETICS" | "LABEL_SCENE" | "BASKET" | "CATEGORY_HOUSE" | "MISSING" | "PARKING" | "ARROWS";
 /** Game types are shown, listed and added to templates in the cabinet; they are authored only by Oyla for now. */
-export const GAME_ACTIVITY_TYPES: readonly ActivityType[] = ["ODD_ONE", "REMEMBER", "MEMORY", "SORT", "WORD_BUILD", "MAZE", "POP", "SYLLABLES", "SHADOW", "COUNT"];
+export const GAME_ACTIVITY_TYPES: readonly ActivityType[] = ["ODD_ONE", "REMEMBER", "MEMORY", "SORT", "WORD_BUILD", "MAZE", "POP", "SYLLABLES", "SHADOW", "COUNT", "MATH", "PAIRS", "PARTS", "TYPE_WORD", "PHONETICS", "LABEL_SCENE", "BASKET", "CATEGORY_HOUSE", "MISSING", "PARKING", "ARROWS"];
 export const isGameActivity = (type?: ActivityType) => type !== undefined && GAME_ACTIVITY_TYPES.includes(type);
 const ACTIVITY_TYPE_LABELS: Record<ActivityType, string> = {
   SINGLE_CHOICE: "Выбор картинки",
@@ -19,6 +20,17 @@ const ACTIVITY_TYPE_LABELS: Record<ActivityType, string> = {
   SYLLABLES: "Слоги",
   SHADOW: "Найди тень",
   COUNT: "Сколько?",
+  MATH: "Примеры",
+  PAIRS: "Сколько пар",
+  PARTS: "Угадай по частям",
+  TYPE_WORD: "Напечатай слово",
+  PHONETICS: "Раскрась звуки",
+  LABEL_SCENE: "Подпиши предметы",
+  BASKET: "Собери корзинку",
+  CATEGORY_HOUSE: "Домик категорий",
+  MISSING: "Что пропало",
+  PARKING: "Парковка по цветам",
+  ARROWS: "Дорожка стрелками",
 };
 export const activityTypeLabel = (type?: ActivityType | string) => (type && ACTIVITY_TYPE_LABELS[type as ActivityType]) || "Выбор картинки";
 export type MediaType = "IMAGE" | "AUDIO";
@@ -132,7 +144,10 @@ export interface Lesson {
 
 export interface MediaAsset { id: string; ownership: ContentOwnership; type: MediaType; originalFilename: string; mimeType: string; sizeBytes: number; url: string; createdAt: string; }
 export interface ContentExerciseOption { id: string; label?: string; imageAssetId?: string; imageUrl?: string; localImageAssetKey?: string; sortOrder: number; isCorrect: boolean; groupKey?: "A" | "B"; sequenceIndex?: number; }
-export interface GameExerciseConfig { groupLabels: string[]; showTargetMs?: number; mazeLayout?: "wave" | "zigzag" | "spiral"; imageAssetKey?: string; imageAssetId?: string; imageUrl?: string; targetOptionId?: string; syllables?: string[]; countValue?: number; }
+export interface GameExerciseConfig { groupLabels: string[]; showTargetMs?: number; mazeLayout?: "wave" | "zigzag" | "spiral"; imageAssetKey?: string; imageAssetId?: string; imageUrl?: string; targetOptionId?: string; syllables?: string[]; countValue?: number;
+  /** A fresh random variant is generated on the server for every lesson. */
+  generate?: boolean; level?: number; mathOp?: string; operandA?: number; operandB?: number; word?: string; category?: string; categoryLabel?: string;
+  requirements?: { imageAssetKey: string; label: string; count: number }[]; container?: string; gridSize?: number; startCell?: number; blockedCells?: number[]; diagonals?: boolean; sound?: string; }
 export type WhiteboardColor = "BLACK" | "BLUE" | "GREEN" | "RED" | "ORANGE" | "PURPLE";
 export type WhiteboardBrushSize = "THIN" | "MEDIUM" | "THICK";
 export type WhiteboardTraceTemplate = "sun" | "house" | "fish" | "star" | "flower" | "heart";
