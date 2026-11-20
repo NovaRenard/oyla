@@ -69,6 +69,17 @@ fun ExerciseStage(
                 "SYLLABLES" -> DrumGame(state, interactive, specialistView, mediaToken, onChoice)
                 "SHADOW" -> ShadowGame(state, interactive, specialistView, mediaToken, onMove)
                 "COUNT" -> CountGame(state, interactive, specialistView, mediaToken, onChoice)
+                "MATH" -> MathGame(state, interactive, specialistView, onChoice)
+                "PAIRS" -> PairsGame(state, interactive, specialistView, onChoice)
+                "PARTS" -> PartsGame(state, interactive, specialistView, mediaToken, onChoice)
+                "TYPE_WORD" -> TypeWordGame(state, interactive, specialistView, onMove, onListen)
+                "PHONETICS" -> PhoneticsGame(state, interactive, specialistView, onMove)
+                "LABEL_SCENE" -> LabelSceneGame(state, interactive, specialistView, mediaToken, onMove)
+                "BASKET" -> BasketGame(state, interactive, specialistView, mediaToken, onMove)
+                "CATEGORY_HOUSE" -> CategoryHouseGame(state, interactive, specialistView, mediaToken, onMove)
+                "MISSING" -> MissingGame(state, interactive, specialistView, mediaToken, onMove)
+                "PARKING" -> ParkingGame(state, interactive, specialistView, onMove)
+                "ARROWS" -> ArrowsGame(state, interactive, specialistView, onMove)
                 else -> ChoiceGame(state, interactive, specialistView, mediaToken, onChoice)
             }
             if (!specialistView) {
@@ -89,7 +100,7 @@ fun ExerciseStage(
             )
         }
         Box(Modifier.offset(x = 760.u, y = 26.u).size(420.u, 60.u), contentAlignment = Alignment.CenterEnd) {
-            ProgressBeads(state.totalExercises, state.currentPosition, state.exerciseStatus == ExerciseUiStatus.COMPLETED, onDark = type !in setOf("REMEMBER", "WORD_BUILD", "SORT", "WHITEBOARD", "ODD_ONE", "MAZE", "SYLLABLES", "SHADOW", "COUNT"))
+            ProgressBeads(state.totalExercises, state.currentPosition, state.exerciseStatus == ExerciseUiStatus.COMPLETED, onDark = type !in LightSceneTypes)
         }
         if (!specialistView && state.exerciseStatus == ExerciseUiStatus.SHOWN) {
             Box(Modifier.offset(0.u, 700.u).size(1280.u, 80.u), contentAlignment = Alignment.Center) {
@@ -108,6 +119,12 @@ fun ExerciseStage(
         }
     }
 }
+
+/** Games on light scenes: their progress beads need a light backing. */
+private val LightSceneTypes = setOf(
+    "REMEMBER", "WORD_BUILD", "SORT", "WHITEBOARD", "ODD_ONE", "MAZE", "SYLLABLES", "SHADOW", "COUNT",
+    "MATH", "PAIRS", "PARTS", "TYPE_WORD", "PHONETICS", "LABEL_SCENE", "BASKET", "CATEGORY_HOUSE", "MISSING", "PARKING", "ARROWS"
+)
 
 private fun bubbleText(state: ExerciseUiState): String {
     val exercise = state.exercise ?: return ""

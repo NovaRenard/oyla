@@ -379,7 +379,10 @@ class ChildSessionViewModel(
 }
 
 /** Activity types whose child moves are judged locally and streamed to the server. */
-internal val MULTI_STEP_TYPES = setOf("MEMORY", "SORT", "WORD_BUILD", "MAZE", "POP", "SHADOW")
+internal val MULTI_STEP_TYPES = setOf(
+    "MEMORY", "SORT", "WORD_BUILD", "MAZE", "POP", "SHADOW",
+    "TYPE_WORD", "PHONETICS", "LABEL_SCENE", "BASKET", "CATEGORY_HOUSE", "MISSING", "PARKING", "ARROWS"
+)
 
 class ChildSessionViewModelFactory(
     private val repository: SessionRepository, private val webSocketClient: OylaWebSocketClient, private val mediaToken: String? = null

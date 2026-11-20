@@ -90,6 +90,17 @@ private fun gameLabel(type: String) = when (type) {
     "SYLLABLES" -> "Барабан"
     "SHADOW" -> "Тени"
     "COUNT" -> "Счёт"
+    "MATH" -> "Примеры"
+    "PAIRS" -> "Пары-счёт"
+    "PARTS" -> "По частям"
+    "TYPE_WORD" -> "Напечатай"
+    "PHONETICS" -> "Звуки"
+    "LABEL_SCENE" -> "Подпиши"
+    "BASKET" -> "Корзинка"
+    "CATEGORY_HOUSE" -> "Домик"
+    "MISSING" -> "Что пропало"
+    "PARKING" -> "Парковка"
+    "ARROWS" -> "Стрелки"
     else -> "Игра"
 }
 
@@ -100,6 +111,11 @@ private fun gameColor(type: String) = when (type) {
     "WORD_BUILD", "SYLLABLES" -> Color(0xFFFF8A5B)
     "MAZE", "WHITEBOARD" -> Color(0xFFFF6B9A)
     "POP", "COUNT" -> Color(0xFFFFA726)
+    "MATH", "PAIRS" -> Color(0xFFFFA726)
+    "TYPE_WORD", "PHONETICS", "LABEL_SCENE" -> Color(0xFFFF8A5B)
+    "PARTS", "MISSING" -> Color(0xFF9B6BFF)
+    "BASKET", "CATEGORY_HOUSE", "PARKING" -> Color(0xFF2EBD8C)
+    "ARROWS" -> Color(0xFFFF6B9A)
     else -> Color(0xFF7A8CFF)
 }
 

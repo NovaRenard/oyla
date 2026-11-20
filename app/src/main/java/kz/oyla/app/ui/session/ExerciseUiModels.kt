@@ -29,7 +29,8 @@ data class ExerciseOptionUiModel(
     val imageUrl: String? = null,
     val groupKey: String? = null,
     val sequenceIndex: Int? = null,
-    val isTarget: Boolean? = null
+    val isTarget: Boolean? = null,
+    val cellIndex: Int? = null
 ) {
     val image: ExerciseImage get() = imageUrl?.let(ExerciseImage::RemoteAsset) ?: ExerciseImage.LocalAsset(imageAssetKey)
     /** Letter tiles (WORD_BUILD) and text-only options have no picture. */
@@ -110,7 +111,7 @@ internal fun String.toExerciseUiStatus(): ExerciseUiStatus = runCatching { Exerc
 
 internal fun ExerciseDto.toUi(correctOptionId: String? = null) = ExerciseUiModel(
     id = id, instructionText = instructionText, audioAssetKey = audioAssetKey,
-    options = options.sortedBy { it.position }.map { ExerciseOptionUiModel(it.id, it.label, it.imageAssetKey, it.position, it.imageUrl.toAbsoluteMediaUrl(), it.groupKey, it.sequenceIndex, it.isTarget) },
+    options = options.sortedBy { it.position }.map { ExerciseOptionUiModel(it.id, it.label, it.imageAssetKey, it.position, it.imageUrl.toAbsoluteMediaUrl(), it.groupKey, it.sequenceIndex, it.isTarget, it.cellIndex) },
     correctOptionId = correctOptionId, audioUrl = audioUrl.toAbsoluteMediaUrl(), activityType = activityType,
     whiteboardConfig = whiteboardConfig?.copy(backgroundUrl = whiteboardConfig.backgroundUrl.toAbsoluteMediaUrl()),
     gameConfig = gameConfig?.copy(imageUrl = gameConfig.imageUrl.toAbsoluteMediaUrl()),

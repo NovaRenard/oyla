@@ -24,7 +24,7 @@ import kotlin.math.PI
 import kotlin.math.sin
 
 /** Every exercise lives in its own full-screen world instead of a window on a shared background. */
-enum class SceneKind { SKY, SEA, ISLANDS, NIGHT, PINK, GARDEN, MEADOW, KITCHEN, PAPER, BOARD, PARTY, BALLOONS, WARM, LAVENDER, CREAM }
+enum class SceneKind { SKY, SEA, ISLANDS, NIGHT, PINK, GARDEN, MEADOW, KITCHEN, PAPER, BOARD, PARTY, BALLOONS, WARM, LAVENDER, CREAM, PEACH, ROOM, TOWN, MINT }
 
 fun sceneFor(activityType: String?): SceneKind = when (activityType) {
     "SINGLE_CHOICE" -> SceneKind.SEA
@@ -39,6 +39,17 @@ fun sceneFor(activityType: String?): SceneKind = when (activityType) {
     "SYLLABLES" -> SceneKind.WARM
     "SHADOW" -> SceneKind.LAVENDER
     "COUNT" -> SceneKind.CREAM
+    "MATH" -> SceneKind.CREAM
+    "PAIRS" -> SceneKind.PEACH
+    "PARTS" -> SceneKind.LAVENDER
+    "TYPE_WORD" -> SceneKind.PAPER
+    "PHONETICS" -> SceneKind.WARM
+    "LABEL_SCENE" -> SceneKind.ROOM
+    "BASKET" -> SceneKind.KITCHEN
+    "CATEGORY_HOUSE" -> SceneKind.MEADOW
+    "MISSING" -> SceneKind.PINK
+    "PARKING" -> SceneKind.TOWN
+    "ARROWS" -> SceneKind.MINT
     else -> SceneKind.SKY
 }
 
@@ -70,6 +81,10 @@ fun SceneBackground(kind: SceneKind, modifier: Modifier = Modifier.fillMaxSize()
                 SceneKind.WARM -> { drawRect(Color(0xFFFFE9D6), size = Size(W, H)); drawCircle(Color(0xFFFFDCC0), 260f, Offset(160f, 140f)); drawRect(Color(0xFFF2B98C), Offset(0f, 560f), Size(W, 240f)) }
                 SceneKind.LAVENDER -> drawRect(Color(0xFFEDE7FF), size = Size(W, H))
                 SceneKind.CREAM -> drawRect(Color(0xFFFFF4DB), size = Size(W, H))
+                SceneKind.PEACH -> peach()
+                SceneKind.ROOM -> room()
+                SceneKind.TOWN -> town()
+                SceneKind.MINT -> mint()
             }
         }
     }
@@ -206,4 +221,30 @@ private fun DrawScope.balloonSky(t: Float) {
     fun drift(speed: Float, offset: Float) = ((t * speed + offset) % 1f) * (W + 400f) - 260f
     cloud(drift(.8f, .1f), 120f, 1.1f, 1f)
     cloud(drift(.6f, .6f), 330f, .8f, .8f)
+}
+
+private fun DrawScope.peach() {
+    drawRect(Color(0xFFFFE9DC), size = Size(W, H))
+    drawCircle(Color(0xFFFFDCC8), 240f, Offset(1180f, 120f))
+    drawCircle(Color(0xFFFFDCC8), 300f, Offset(60f, 860f))
+}
+
+private fun DrawScope.room() {
+    drawRect(Color(0xFFE8F6F1), size = Size(W, H))
+    var x = 0f
+    while (x < W) { drawRect(Color(0xFFDDF0E9), Offset(x, 0f), Size(40f, 610f)); x += 80f }
+    drawRect(Color(0xFFD9B48A), Offset(0f, 610f), Size(W, 190f))
+    drawRect(Color(0xFFC49A6C), Offset(0f, 610f), Size(W, 16f))
+}
+
+private fun DrawScope.town() {
+    drawRect(Color(0xFFDDEFD3), size = Size(W, H))
+    drawRect(Color(0xFFC6E3B5), Offset(0f, 520f), Size(W, 280f))
+    listOf(Offset(40f, 560f), Offset(1240f, 600f), Offset(60f, 760f), Offset(1220f, 770f)).forEach { drawCircle(Color(0xFF8CCB74), 34f, it) }
+}
+
+private fun DrawScope.mint() {
+    drawRect(Color(0xFFE3F7EF), size = Size(W, H))
+    listOf(Triple(90f, 700f, Color.White), Triple(1220f, 120f, Color(0xFFFF9FB2)), Triple(1230f, 760f, Color(0xFFFFD43B)), Triple(60f, 300f, Color(0xFFFF9FB2)))
+        .forEach { (x, y, c) -> drawCircle(c, 10f, Offset(x, y)) }
 }
