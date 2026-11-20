@@ -18,8 +18,10 @@ data class ExerciseOptionDto(
     val groupKey: String? = null,
     /** WORD_BUILD only: 1..n for letters of the word, null for distractor letters. */
     val sequenceIndex: Int? = null,
-    /** POP only (both roles): true for balloons that must be popped; null for every other type. */
-    val isTarget: Boolean? = null
+    /** POP, CATEGORY_HOUSE, MISSING (both roles): balloon to pop / item of the category / missing item; null for every other type. */
+    val isTarget: Boolean? = null,
+    /** LABEL_SCENE, MISSING, ARROWS: cell of the scene or board. */
+    val cellIndex: Int? = null
 )
 
 @Serializable
@@ -35,7 +37,7 @@ data class ExerciseDto(
     val gameConfig: GameExerciseConfigDto? = null
 )
 
-/** Settings for ODD_ONE, REMEMBER, MEMORY, SORT, WORD_BUILD, MAZE, POP, SYLLABLES, SHADOW and COUNT. */
+/** Settings for every child game type (see docs/game-generation-contract.md). */
 @Serializable
 data class GameExerciseConfigDto(
     val groupLabels: List<String> = emptyList(),
@@ -49,8 +51,37 @@ data class GameExerciseConfigDto(
     /** SYLLABLES only: 2..6 non-blank syllables, each up to 4 characters. */
     val syllables: List<String> = emptyList(),
     /** COUNT only: 1..10, must equal the correct option's label. */
-    val countValue: Int? = null
+    val countValue: Int? = null,
+    /** The variant is generated at session start; the fields below are constraints in content and concrete values in sessions. */
+    val generate: Boolean = false,
+    /** 1..3 difficulty. */
+    val level: Int? = null,
+    /** MATH: "+", "-", "×" ("±" in content only). */
+    val mathOp: String? = null,
+    /** MATH: example operands; PAIRS: cups (A) and plates (B). */
+    val operandA: Int? = null,
+    val operandB: Int? = null,
+    /** TYPE_WORD, PHONETICS: the word in upper case. */
+    val word: String? = null,
+    /** Picture category key (ODD_ONE, SHADOW, CATEGORY_HOUSE…). */
+    val category: String? = null,
+    /** Child-facing category label («Фрукты»). */
+    val categoryLabel: String? = null,
+    /** BASKET: what to put into the container. */
+    val requirements: List<BasketNeedDto> = emptyList(),
+    /** BASKET: "basket" or "bottle". */
+    val container: String? = null,
+    /** ARROWS: board side, start cell (row * gridSize + col), stones and diagonal arrows. */
+    val gridSize: Int? = null,
+    val startCell: Int? = null,
+    val blockedCells: List<Int> = emptyList(),
+    val diagonals: Boolean = false,
+    /** POP/SORT generation: the sound (a letter). */
+    val sound: String? = null
 )
+
+@Serializable
+data class BasketNeedDto(val imageAssetKey: String, val label: String, val count: Int)
 
 @Serializable data class WhiteboardPointDto(val x: Float, val y: Float)
 
@@ -105,7 +136,10 @@ data class AnswerExerciseRequest(
     val sessionExerciseId: String,
     val selectedOptionId: String,
     val clientEventId: String,
-    /** MEMORY: second card option id; SORT: "A" or "B"; SHADOW: shadow (slot) option id; ignored otherwise. */
+    /**
+     * MEMORY: second card option id; SORT: "A" or "B"; SHADOW: shadow (slot) option id; PHONETICS: colour key;
+     * LABEL_SCENE: object option id; PARKING: spot colour; ignored otherwise.
+     */
     val secondaryValue: String? = null
 )
 

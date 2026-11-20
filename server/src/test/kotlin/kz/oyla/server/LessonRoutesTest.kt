@@ -120,7 +120,8 @@ class LessonRoutesTest {
 
         val state = json.decodeFromString<ExerciseStateResponse>(client.get("/api/v1/sessions/${lesson.sessionId}/exercise/state") { bearer(lesson.sessionToken) }.bodyAsText())
         val exercise = checkNotNull(state.exercise)
-        assertEquals("MEMORY", exercise.activityType); assertEquals(6, exercise.options.size); assertNotNull(exercise.gameConfig)
+        assertEquals("MEMORY", exercise.activityType); assertEquals(4, exercise.options.size) // V14: «Найди пару» generates 4 pairs (level 2)
+        assertEquals(true, exercise.gameConfig?.generate); assertEquals(2, exercise.gameConfig?.level)
         client.post("/api/v1/sessions/${lesson.sessionId}/exercise/show") { bearer(lesson.sessionToken); jsonBody("""{"exerciseId":"${exercise.id}"}""") }
         client.post("/api/v1/sessions/${lesson.sessionId}/exercise/start") { bearer(lesson.sessionToken); jsonBody("""{"sessionExerciseId":"${state.sessionExerciseId}"}""") }
         val fish = exercise.options.first().id
@@ -132,14 +133,14 @@ class LessonRoutesTest {
                 jsonBody("""{"sessionExerciseId":"${state.sessionExerciseId}","selectedOptionId":"$fish","secondaryValue":"$fish","clientEventId":"${java.util.UUID.randomUUID()}"}""") }
             assertEquals(HttpStatusCode.OK, answer.status)
             val body = json.decodeFromString<AnswerExerciseResponse>(answer.bodyAsText())
-            assertTrue(body.isCorrect); assertEquals(fish, body.secondaryValue); assertEquals(1, body.progressDone); assertEquals(6, body.progressTotal)
+            assertTrue(body.isCorrect); assertEquals(fish, body.secondaryValue); assertEquals(1, body.progressDone); assertEquals(4, body.progressTotal)
             received = withTimeout(2_000) { (incoming.receive() as Frame.Text).readText() }
         }
         val event = json.decodeFromString<AnswerReceivedEvent>(received)
-        assertEquals("ANSWER_RECEIVED", event.type); assertEquals(fish, event.secondaryValue); assertEquals(1, event.progressDone); assertEquals(6, event.progressTotal)
+        assertEquals("ANSWER_RECEIVED", event.type); assertEquals(fish, event.secondaryValue); assertEquals(1, event.progressDone); assertEquals(4, event.progressTotal)
 
         val childState = json.decodeFromString<ExerciseStateResponse>(client.get("/api/v1/sessions/${lesson.sessionId}/exercise/state") { bearer(childToken) }.bodyAsText())
-        assertEquals(listOf(fish), childState.solvedOptionIds); assertEquals(1, childState.progressDone); assertEquals(6, childState.progressTotal)
+        assertEquals(listOf(fish), childState.solvedOptionIds); assertEquals(1, childState.progressDone); assertEquals(4, childState.progressTotal)
     }
 
     private fun withServer(block: suspend ApplicationTestBuilder.(InMemorySessionRepository, InMemorySaasRepository, MutableClock) -> Unit) = testApplication {

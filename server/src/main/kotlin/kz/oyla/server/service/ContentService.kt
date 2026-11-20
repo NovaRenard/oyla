@@ -4,6 +4,7 @@ import java.io.BufferedInputStream
 import java.io.InputStream
 import java.time.Clock
 import java.util.UUID
+import kotlin.random.Random
 import kz.oyla.server.model.ActivityType
 import kz.oyla.server.model.AuditActorType
 import kz.oyla.server.model.AuditLogRecord
@@ -16,6 +17,9 @@ import kz.oyla.server.model.ExerciseSnapshotOption
 import kz.oyla.server.model.GameExerciseConfig
 import kz.oyla.server.model.isChoiceLike
 import kz.oyla.server.model.isGame
+import kz.oyla.server.model.isGeneratedOnly
+import kz.oyla.server.model.BasketNeed
+import kz.oyla.server.model.dto.BasketNeedDto
 import kz.oyla.server.model.LessonTemplateItemRecord
 import kz.oyla.server.model.LessonTemplateRecord
 import kz.oyla.server.model.LessonTemplateSnapshot
@@ -48,7 +52,9 @@ class ContentService(
     private val repository: ContentRepository,
     private val tenants: SaasRepository,
     private val storage: MediaStorage,
-    private val clock: Clock = Clock.systemUTC()
+    private val clock: Clock = Clock.systemUTC(),
+    /** Draws the concrete variant of every `generate = true` exercise at snapshot time. */
+    private val random: Random = Random.Default
 ) {
     suspend fun listExercises(context: CenterContext, filter: ContentExerciseFilter): List<ContentExerciseDto> = buildList {
         for (exercise in repository.listExercises(context.center.id, filter)) add(exercise.toDto(repository.templateUsageCount(exercise.id)))
@@ -216,6 +222,8 @@ class ContentService(
         fun requireContent() { if(options.any{it.label.isNullOrBlank() && it.imageAssetId==null && it.localImageAssetKey==null}) throw ApiException.validation("У варианта нужны название или изображение") }
         fun requireSingleCorrect(message: String) { if(options.count{it.isCorrect} != 1) throw ApiException.validation(message) }
         fun requirePicture(message: String) { if(game?.imageAssetKey.isNullOrBlank() && game?.imageAssetId == null) throw ApiException.validation(message) }
+        if (game?.generate == true) { validateGenerated(type, options, game); return }
+        if (type.isGeneratedOnly) throw ApiException.validation("Это упражнение составляется автоматически: включите генерацию и выберите уровень от 1 до 3")
         when(type) {
             ActivityType.SINGLE_CHOICE -> {
                 if(options.size !in 2..6) throw ApiException.validation("SINGLE_CHOICE требует от 2 до 6 вариантов")
@@ -282,6 +290,8 @@ class ContentService(
                 if(options.isNotEmpty()) throw ApiException.validation("Лабиринт не использует варианты ответа")
                 if(game?.mazeLayout !in GameExerciseConfig.MazeLayouts) throw ApiException.validation("Выберите форму лабиринта: wave, zigzag или spiral")
             }
+            ActivityType.MATH, ActivityType.PAIRS, ActivityType.PARTS, ActivityType.TYPE_WORD, ActivityType.PHONETICS, ActivityType.LABEL_SCENE,
+            ActivityType.BASKET, ActivityType.CATEGORY_HOUSE, ActivityType.MISSING, ActivityType.PARKING, ActivityType.ARROWS -> error("unreachable: generated only")
             ActivityType.WHITEBOARD -> {
                 val config = whiteboard ?: throw ApiException.validation("Для WHITEBOARD нужны настройки доски")
                 if (config.availableColors.size !in 4..6 || config.availableColors.distinct().size != config.availableColors.size) throw ApiException.validation("Палитра доски должна содержать от 4 до 6 разных цветов")
@@ -291,16 +301,53 @@ class ContentService(
             }
         }
     }
-    /** Keeps only the fields relevant to [type]; derived fields (imageUrl, targetOptionId) are never stored. */
-    private suspend fun gameConfig(centerId: UUID, type: ActivityType, input: GameExerciseConfigDto): GameExerciseConfig = when(type) {
-        ActivityType.SORT -> GameExerciseConfig(groupLabels = input.groupLabels.map { it.trim() })
-        ActivityType.REMEMBER -> GameExerciseConfig(showTargetMs = input.showTargetMs)
-        ActivityType.MAZE -> GameExerciseConfig(mazeLayout = input.mazeLayout?.trim()?.lowercase())
-        ActivityType.WORD_BUILD -> pictureConfig(centerId, input)
-        ActivityType.SYLLABLES -> pictureConfig(centerId, input).copy(syllables = input.syllables.map { it.trim() })
-        ActivityType.COUNT -> pictureConfig(centerId, input).copy(countValue = input.countValue)
-        else -> GameExerciseConfig()
+    /**
+     * `generate = true`: level 1..3, no hand-made options for the generated-only types, and the constraints must
+     * let the generator build a variant (tried with several seeds so a rare dead end is caught too).
+     */
+    private fun validateGenerated(type: ActivityType, options: List<ContentExerciseOptionRecord>, game: GameExerciseConfig) {
+        if (!GameGenerator.supports(type)) throw ApiException.validation("Для этого вида упражнения генерация недоступна")
+        val level = game.level
+        if (type.isGeneratedOnly && level == null) throw ApiException.validation("Выберите уровень сложности от 1 до 3")
+        if (level != null && level !in 1..3) throw ApiException.validation("Уровень сложности должен быть от 1 до 3")
+        if (type.isGeneratedOnly && options.isNotEmpty()) throw ApiException.validation("Варианты этого упражнения составляются автоматически")
+        if (type == ActivityType.REMEMBER) { val ms = game.showTargetMs; if (ms != null && ms !in 1000..10000) throw ApiException.validation("Время показа должно быть от 1000 до 10000 мс") }
+        repeat(GenerationChecks) { seed ->
+            try { GameGenerator.generate(type, game, Random(seed)) }
+            catch (error: GenerationException) { throw ApiException.validation(error.message ?: "Не удалось составить упражнение с такими условиями") }
+        }
     }
+    /** Keeps only the fields relevant to [type]; derived fields (imageUrl, targetOptionId) are never stored. */
+    private suspend fun gameConfig(centerId: UUID, type: ActivityType, input: GameExerciseConfigDto): GameExerciseConfig {
+        val specific = when(type) {
+            ActivityType.SORT -> GameExerciseConfig(groupLabels = input.groupLabels.map { it.trim() })
+            ActivityType.REMEMBER -> GameExerciseConfig(showTargetMs = input.showTargetMs, category = category(input.category, allowShapes = true))
+            ActivityType.MAZE -> GameExerciseConfig(mazeLayout = input.mazeLayout?.trim()?.lowercase())
+            ActivityType.WORD_BUILD -> pictureConfig(centerId, input)
+            ActivityType.SYLLABLES -> pictureConfig(centerId, input).copy(syllables = input.syllables.map { it.trim() })
+            ActivityType.COUNT -> pictureConfig(centerId, input).copy(countValue = input.countValue)
+            ActivityType.ODD_ONE, ActivityType.MEMORY, ActivityType.SHADOW, ActivityType.LABEL_SCENE, ActivityType.CATEGORY_HOUSE, ActivityType.MISSING ->
+                GameExerciseConfig(category = category(input.category))
+            ActivityType.POP -> GameExerciseConfig(sound = input.sound?.trim()?.uppercase()?.ifEmpty { null })
+            ActivityType.MATH -> pictureConfig(centerId, input).copy(mathOp = input.mathOp?.trim()?.ifEmpty { null }, operandA = input.operandA, operandB = input.operandB)
+            ActivityType.PAIRS -> GameExerciseConfig(operandA = input.operandA, operandB = input.operandB)
+            ActivityType.PARTS -> pictureConfig(centerId, input).copy(imageAssetId = null, category = category(input.category))
+            ActivityType.TYPE_WORD -> pictureConfig(centerId, input).copy(word = word(input.word))
+            ActivityType.PHONETICS -> pictureConfig(centerId, input).copy(imageAssetId = null, word = word(input.word))
+            ActivityType.BASKET -> GameExerciseConfig(container = input.container?.trim()?.lowercase()?.ifEmpty { null },
+                requirements = input.requirements.map { need -> BasketNeed(need.imageAssetKey.trim(), PicturePool.byKey(need.imageAssetKey.trim())?.word ?: need.label.trim(), need.count) })
+            ActivityType.ARROWS -> GameExerciseConfig(gridSize = input.gridSize, startCell = input.startCell, blockedCells = input.blockedCells, diagonals = input.diagonals)
+            ActivityType.PARKING, ActivityType.SINGLE_CHOICE, ActivityType.WHITEBOARD -> GameExerciseConfig()
+        }
+        return specific.copy(generate = input.generate, level = input.level)
+    }
+    /** A picture category key (or its Russian label), normalised to the key; REMEMBER also accepts "shape". */
+    private fun category(value: String?, allowShapes: Boolean = false): String? {
+        val trimmed = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        if (allowShapes && trimmed.equals(GameGenerator.ShapeCategory, ignoreCase = true)) return GameGenerator.ShapeCategory
+        return PicturePool.categoryKeyFor(trimmed) ?: throw ApiException.validation("Неизвестная категория картинок")
+    }
+    private fun word(value: String?): String? = value?.trim()?.uppercase()?.takeIf { it.isNotEmpty() }
     /** WORD_BUILD, SYLLABLES and COUNT picture: an APK asset key or an uploaded IMAGE of this center. */
     private suspend fun pictureConfig(centerId: UUID, input: GameExerciseConfigDto): GameExerciseConfig {
         val image = input.imageAssetId?.takeIf { it.isNotBlank() }?.uuidOrNull("Изображение")
@@ -340,11 +387,24 @@ class ContentService(
         return LessonTemplateDto(id.toString(),ownership,name,description,status,items.size,itemDtos,createdAt.toString(),updatedAt.toString())
     }
     private fun MediaAssetRecord.toDto()=MediaAssetDto(id.toString(),ownership,type,originalFilename,mimeType,sizeBytes,id.url(),createdAt.toString())
-    private fun ContentExerciseRecord.toSnapshot()=ExerciseSnapshot(id.toString(),activityType,title,instructionText,instructionAudioAssetId?.toString(),instructionAudioAssetId?.url(),localAudioAssetKey,
+    /** `generate = true` content gets a fresh random variant; everything else is copied as stored. */
+    private fun ContentExerciseRecord.toSnapshot(): ExerciseSnapshot {
+        val game = gameConfig
+        if (game == null || !game.generate || !GameGenerator.supports(activityType)) return copiedSnapshot()
+        val generated = try { GameGenerator.generate(activityType, game, random) }
+            catch (error: GenerationException) { throw ApiException.conflict("Не удалось составить упражнение «$title»: ${error.message}") }
+        return ExerciseSnapshot(id.toString(), activityType, title, instructionText, instructionAudioAssetId?.toString(), instructionAudioAssetId?.url(), localAudioAssetKey,
+            generated.options, generated.correctOptionId?.takeIf { activityType.isChoiceLike }, null,
+            generated.gameConfig.copy(imageUrl = generated.gameConfig.imageAssetId?.let { "/api/v1/media/$it" }, targetOptionId = null))
+    }
+    private fun ContentExerciseRecord.copiedSnapshot()=ExerciseSnapshot(id.toString(),activityType,title,instructionText,instructionAudioAssetId?.toString(),instructionAudioAssetId?.url(),localAudioAssetKey,
         options.sortedBy{it.sortOrder}.map { ExerciseSnapshotOption(it.id.toString(),it.label,it.imageAssetId?.toString(),it.imageAssetId?.url(),it.localImageAssetKey,it.sortOrder,it.groupKey,it.sequenceIndex,it.isCorrect.takeIf { activityType == ActivityType.POP }) },
         options.singleOrNull{it.isCorrect}?.id?.toString()?.takeIf { activityType.isChoiceLike },whiteboardConfig?.copy(backgroundUrl = whiteboardConfig.backgroundAssetId?.let { "/api/v1/media/$it" }),
         gameConfig?.copy(imageUrl = gameConfig.imageAssetId?.let { "/api/v1/media/$it" }, targetOptionId = null))
-    private fun GameExerciseConfig.toDto() = GameExerciseConfigDto(groupLabels, showTargetMs, mazeLayout, imageAssetKey, imageAssetId, imageAssetId?.let { "/api/v1/media/$it" }, syllables = syllables, countValue = countValue)
+    private fun GameExerciseConfig.toDto() = GameExerciseConfigDto(groupLabels, showTargetMs, mazeLayout, imageAssetKey, imageAssetId, imageAssetId?.let { "/api/v1/media/$it" }, syllables = syllables, countValue = countValue,
+        generate = generate, level = level, mathOp = mathOp, operandA = operandA, operandB = operandB, word = word, category = category, categoryLabel = categoryLabel ?: PicturePool.categoryLabel(category),
+        requirements = requirements.map { BasketNeedDto(it.imageAssetKey, it.label, it.count) }, container = container, gridSize = gridSize, startCell = startCell,
+        blockedCells = blockedCells, diagonals = diagonals, sound = sound)
     private fun WhiteboardExerciseConfig.toDto() = WhiteboardExerciseConfigDto(backgroundAssetId, backgroundAssetId?.let { "/api/v1/media/$it" }, childDrawingInitiallyEnabled, availableColors, defaultColor, defaultBrushSize, allowEraser, allowClear, traceTemplate)
     private fun UUID.url()="/api/v1/media/$this"
     private fun String.required(label:String,max:Int):String=trim().takeIf{it.isNotEmpty() && it.length<=max} ?: throw ApiException.validation("$label обязательно и не длиннее $max символов")
@@ -377,6 +437,7 @@ class ContentService(
     }
     private companion object {
         const val MaxOptions = 10
+        const val GenerationChecks = 8
         val AssetKeyPattern = Regex("[a-z0-9_]+")
         val CountLabelPattern = Regex("[0-9]{1,2}")
         val AllowedMedia = mapOf(
