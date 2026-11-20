@@ -70,7 +70,10 @@ data class StateSnapshotEvent(
     val hasPrevious: Boolean = false,
     val hasNext: Boolean = true,
     val planCompleted: Boolean = false,
-    val whiteboardState: WhiteboardStateSnapshotDto? = null
+    val whiteboardState: WhiteboardStateSnapshotDto? = null,
+    val progressDone: Int = 0,
+    val progressTotal: Int = 0,
+    val solvedOptionIds: List<String> = emptyList()
 )
 
 @Serializable
@@ -127,7 +130,10 @@ data class AnswerReceivedEvent(
     val isCorrect: Boolean,
     val attemptNumber: Int,
     val responseTimeMs: Long,
-    val exerciseStatus: ExerciseStatus
+    val exerciseStatus: ExerciseStatus,
+    val secondaryValue: String? = null,
+    val progressDone: Int = 0,
+    val progressTotal: Int = 0
 )
 
 @Serializable
@@ -155,7 +161,10 @@ data class ExerciseChangedEvent(
     val latestAnswer: AnswerExerciseResponse? = null,
     val startedAt: String? = null,
     val planCompleted: Boolean = false,
-    val whiteboardState: WhiteboardStateSnapshotDto? = null
+    val whiteboardState: WhiteboardStateSnapshotDto? = null,
+    val progressDone: Int = 0,
+    val progressTotal: Int = 0,
+    val solvedOptionIds: List<String> = emptyList()
 )
 
 @Serializable

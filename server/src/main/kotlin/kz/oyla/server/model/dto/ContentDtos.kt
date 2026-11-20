@@ -26,7 +26,9 @@ import kz.oyla.server.model.WhiteboardColor
     val imageUrl: String? = null,
     val localImageAssetKey: String? = null,
     val sortOrder: Int,
-    val isCorrect: Boolean
+    val isCorrect: Boolean,
+    val groupKey: String? = null,
+    val sequenceIndex: Int? = null
 )
 
 @Serializable data class ContentExerciseDto(
@@ -43,7 +45,8 @@ import kz.oyla.server.model.WhiteboardColor
     val whiteboardConfig: WhiteboardExerciseConfigDto? = null,
     val templateUsageCount: Int = 0,
     val createdAt: String,
-    val updatedAt: String
+    val updatedAt: String,
+    val gameConfig: GameExerciseConfigDto? = null
 )
 
 @Serializable data class WhiteboardExerciseConfigDto(
@@ -54,7 +57,9 @@ import kz.oyla.server.model.WhiteboardColor
     val defaultColor: WhiteboardColor = WhiteboardColor.BLACK,
     val defaultBrushSize: WhiteboardBrushSize = WhiteboardBrushSize.MEDIUM,
     val allowEraser: Boolean = true,
-    val allowClear: Boolean = true
+    val allowClear: Boolean = true,
+    /** null or one of "sun", "house", "fish", "star", "flower", "heart". */
+    val traceTemplate: String? = null
 )
 
 @Serializable data class ExerciseOptionInput(
@@ -62,7 +67,9 @@ import kz.oyla.server.model.WhiteboardColor
     val label: String? = null,
     val imageAssetId: String? = null,
     val sortOrder: Int? = null,
-    val isCorrect: Boolean = false
+    val isCorrect: Boolean = false,
+    val groupKey: String? = null,
+    val sequenceIndex: Int? = null
 )
 
 @Serializable data class CreateExerciseRequest(
@@ -71,7 +78,8 @@ import kz.oyla.server.model.WhiteboardColor
     val activityType: ActivityType = ActivityType.SINGLE_CHOICE,
     val instructionAudioAssetId: String? = null,
     val options: List<ExerciseOptionInput> = emptyList(),
-    val whiteboardConfig: WhiteboardExerciseConfigDto? = null
+    val whiteboardConfig: WhiteboardExerciseConfigDto? = null,
+    val gameConfig: GameExerciseConfigDto? = null
 )
 
 /** PATCH is a complete type-specific definition to keep validation and ordering atomic. */
@@ -80,7 +88,8 @@ import kz.oyla.server.model.WhiteboardColor
     val instructionText: String? = null,
     val instructionAudioAssetId: String? = null,
     val options: List<ExerciseOptionInput>? = null,
-    val whiteboardConfig: WhiteboardExerciseConfigDto? = null
+    val whiteboardConfig: WhiteboardExerciseConfigDto? = null,
+    val gameConfig: GameExerciseConfigDto? = null
 )
 
 @Serializable data class LessonTemplateItemDto(

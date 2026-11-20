@@ -134,13 +134,14 @@ class DatabaseExerciseRepository : ExerciseRepository {
     override suspend fun createAttempt(record: ExerciseAttemptRecord): Boolean = database {
         connection.prepareStatement(
             """INSERT INTO attempts (id, session_exercise_id, selected_option_id, attempt_number, is_correct,
-               response_time_ms, client_event_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               response_time_ms, client_event_id, created_at, secondary_value) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT (client_event_id) DO NOTHING"""
         ).use { statement ->
             statement.setObject(1, record.id); statement.setObject(2, record.sessionExerciseId)
             statement.setString(3, record.selectedOptionId); statement.setInt(4, record.attemptNumber)
             statement.setBoolean(5, record.isCorrect); statement.setLong(6, record.responseTimeMs)
             statement.setObject(7, record.clientEventId); statement.setTimestamp(8, java.sql.Timestamp.from(record.createdAt))
+            statement.setString(9, record.secondaryValue)
             statement.executeUpdate() == 1
         }
     }
@@ -185,7 +186,8 @@ class DatabaseExerciseRepository : ExerciseRepository {
         id = getObject("id", UUID::class.java), sessionExerciseId = getObject("session_exercise_id", UUID::class.java),
         selectedOptionId = getString("selected_option_id"), attemptNumber = getInt("attempt_number"),
         isCorrect = getBoolean("is_correct"), responseTimeMs = getLong("response_time_ms"),
-        clientEventId = getObject("client_event_id", UUID::class.java), createdAt = getTimestamp("created_at").toInstant()
+        clientEventId = getObject("client_event_id", UUID::class.java), createdAt = getTimestamp("created_at").toInstant(),
+        secondaryValue = getString("secondary_value")
     )
 
     private val connection: Connection get() = (TransactionManager.current().connection as JdbcConnectionImpl).connection

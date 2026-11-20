@@ -2,7 +2,25 @@ export type DeviceRole = "CHILD" | "SPECIALIST";
 export type DeviceStatus = "ACTIVE" | "BLOCKED" | "UNLINKED";
 export type CatalogStatus = "ACTIVE" | "ARCHIVED";
 export type ContentOwnership = "SYSTEM" | "CENTER";
-export type ActivityType = "SINGLE_CHOICE" | "WHITEBOARD";
+export type ActivityType = "SINGLE_CHOICE" | "WHITEBOARD" | "ODD_ONE" | "REMEMBER" | "MEMORY" | "SORT" | "WORD_BUILD" | "MAZE" | "POP" | "SYLLABLES" | "SHADOW" | "COUNT";
+/** Game types are shown, listed and added to templates in the cabinet; they are authored only by Oyla for now. */
+export const GAME_ACTIVITY_TYPES: readonly ActivityType[] = ["ODD_ONE", "REMEMBER", "MEMORY", "SORT", "WORD_BUILD", "MAZE", "POP", "SYLLABLES", "SHADOW", "COUNT"];
+export const isGameActivity = (type?: ActivityType) => type !== undefined && GAME_ACTIVITY_TYPES.includes(type);
+const ACTIVITY_TYPE_LABELS: Record<ActivityType, string> = {
+  SINGLE_CHOICE: "Выбор картинки",
+  WHITEBOARD: "Белая доска",
+  ODD_ONE: "Что лишнее",
+  REMEMBER: "Запомни и найди",
+  MEMORY: "Найди пару",
+  SORT: "Разложи по группам",
+  WORD_BUILD: "Собери слово",
+  MAZE: "Лабиринт",
+  POP: "Лопни шарики",
+  SYLLABLES: "Слоги",
+  SHADOW: "Найди тень",
+  COUNT: "Сколько?",
+};
+export const activityTypeLabel = (type?: ActivityType | string) => (type && ACTIVITY_TYPE_LABELS[type as ActivityType]) || "Выбор картинки";
 export type MediaType = "IMAGE" | "AUDIO";
 
 export interface User {
@@ -113,11 +131,13 @@ export interface Lesson {
 }
 
 export interface MediaAsset { id: string; ownership: ContentOwnership; type: MediaType; originalFilename: string; mimeType: string; sizeBytes: number; url: string; createdAt: string; }
-export interface ContentExerciseOption { id: string; label?: string; imageAssetId?: string; imageUrl?: string; localImageAssetKey?: string; sortOrder: number; isCorrect: boolean; }
+export interface ContentExerciseOption { id: string; label?: string; imageAssetId?: string; imageUrl?: string; localImageAssetKey?: string; sortOrder: number; isCorrect: boolean; groupKey?: "A" | "B"; sequenceIndex?: number; }
+export interface GameExerciseConfig { groupLabels: string[]; showTargetMs?: number; mazeLayout?: "wave" | "zigzag" | "spiral"; imageAssetKey?: string; imageAssetId?: string; imageUrl?: string; targetOptionId?: string; syllables?: string[]; countValue?: number; }
 export type WhiteboardColor = "BLACK" | "BLUE" | "GREEN" | "RED" | "ORANGE" | "PURPLE";
 export type WhiteboardBrushSize = "THIN" | "MEDIUM" | "THICK";
-export interface WhiteboardExerciseConfig { backgroundAssetId?: string; backgroundUrl?: string; childDrawingInitiallyEnabled: boolean; availableColors: WhiteboardColor[]; defaultColor: WhiteboardColor; defaultBrushSize: WhiteboardBrushSize; allowEraser: boolean; allowClear: boolean; }
-export interface ContentExercise { id: string; ownership: ContentOwnership; activityType: ActivityType; title: string; instructionText: string; instructionAudioAssetId?: string; audioUrl?: string; localAudioAssetKey?: string; status: CatalogStatus; options: ContentExerciseOption[]; whiteboardConfig?: WhiteboardExerciseConfig; templateUsageCount: number; createdAt: string; updatedAt: string; }
+export type WhiteboardTraceTemplate = "sun" | "house" | "fish" | "star" | "flower" | "heart";
+export interface WhiteboardExerciseConfig { backgroundAssetId?: string; backgroundUrl?: string; childDrawingInitiallyEnabled: boolean; availableColors: WhiteboardColor[]; defaultColor: WhiteboardColor; defaultBrushSize: WhiteboardBrushSize; allowEraser: boolean; allowClear: boolean; traceTemplate?: WhiteboardTraceTemplate | null; }
+export interface ContentExercise { id: string; ownership: ContentOwnership; activityType: ActivityType; title: string; instructionText: string; instructionAudioAssetId?: string; audioUrl?: string; localAudioAssetKey?: string; status: CatalogStatus; options: ContentExerciseOption[]; whiteboardConfig?: WhiteboardExerciseConfig; gameConfig?: GameExerciseConfig; templateUsageCount: number; createdAt: string; updatedAt: string; }
 export interface LessonTemplateItem { id: string; exerciseId: string; position: number; exerciseTitle?: string; activityType?: ActivityType; }
 export interface LessonTemplate { id: string; ownership: ContentOwnership; name: string; description?: string; status: CatalogStatus; exerciseCount: number; items: LessonTemplateItem[]; createdAt: string; updatedAt: string; }
 

@@ -19,7 +19,15 @@ import java.time.ZoneId
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kz.oyla.server.model.DeviceRole
+import io.ktor.client.plugins.websocket.WebSockets
+import io.ktor.client.plugins.websocket.webSocket
+import io.ktor.websocket.Frame
+import io.ktor.websocket.readText
+import kotlinx.coroutines.withTimeout
 import kz.oyla.server.model.dto.ActivateDeviceResponse
+import kz.oyla.server.model.dto.AnswerExerciseResponse
+import kz.oyla.server.model.dto.AnswerReceivedEvent
+import kz.oyla.server.model.dto.ExerciseStateResponse
 import kz.oyla.server.model.dto.AuthResponse
 import kz.oyla.server.model.dto.ChildDto
 import kz.oyla.server.model.dto.ChildLessonAssignmentResponse
@@ -33,6 +41,7 @@ import kz.oyla.server.repository.InMemorySessionRepository
 import kz.oyla.server.service.SaasConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -94,6 +103,43 @@ class LessonRoutesTest {
         assertEquals(HttpStatusCode.NoContent, client.post("/api/v1/sessions/${created.sessionId}/complete") { bearer(created.sessionToken) }.status)
         clock.advanceSeconds(91)
         assertTrue(json.decodeFromString<List<DeviceDto>>(client.get("/api/v1/device-lessons/available-child-devices") { bearer(specialistTablet.deviceToken) }.bodyAsText()).isEmpty())
+    }
+
+    @Test fun `games template lesson answers MEMORY over HTTP and broadcasts progress`() = withServer { _, _, _ ->
+        val owner = register("Игры", "lesson-games@example.com")
+        val child = createChild(owner.accessToken, "Алихан")
+        val specialist = createSpecialist(owner.accessToken, "Анна")
+        val specialistTablet = activate(createCode(owner.accessToken, "Кабинет", DeviceRole.SPECIALIST).activationCode, "games-specialist")
+        val childTablet = activate(createCode(owner.accessToken, "Алихан", DeviceRole.CHILD).activationCode, "games-child")
+        val response = client.post("/api/v1/device-lessons") { bearer(specialistTablet.deviceToken)
+            jsonBody("""{"specialistId":"${specialist.id}","childId":"${child.id}","childDeviceId":"${childTablet.deviceId}","lessonTemplateId":"00000000-0000-0000-0000-000000000501"}""") }
+        assertEquals(HttpStatusCode.Created, response.status)
+        val lesson = json.decodeFromString<DeviceLessonResponse>(response.bodyAsText())
+        assertEquals("Игры Ойлика", lesson.templateName); assertEquals(6, lesson.exerciseCount)
+        val childToken = json.decodeFromString<ChildLessonAssignmentResponse>(client.get("/api/v1/device-lessons/current-assignment") { bearer(childTablet.deviceToken) }.bodyAsText()).sessionToken
+
+        val state = json.decodeFromString<ExerciseStateResponse>(client.get("/api/v1/sessions/${lesson.sessionId}/exercise/state") { bearer(lesson.sessionToken) }.bodyAsText())
+        val exercise = checkNotNull(state.exercise)
+        assertEquals("MEMORY", exercise.activityType); assertEquals(6, exercise.options.size); assertNotNull(exercise.gameConfig)
+        client.post("/api/v1/sessions/${lesson.sessionId}/exercise/show") { bearer(lesson.sessionToken); jsonBody("""{"exerciseId":"${exercise.id}"}""") }
+        client.post("/api/v1/sessions/${lesson.sessionId}/exercise/start") { bearer(lesson.sessionToken); jsonBody("""{"sessionExerciseId":"${state.sessionExerciseId}"}""") }
+        val fish = exercise.options.first().id
+
+        var received = ""
+        client.config { install(WebSockets) }.webSocket("/ws/sessions/${lesson.sessionId}?token=${lesson.sessionToken}") {
+            withTimeout(2_000) { incoming.receive() } // STATE_SNAPSHOT
+            val answer = client.post("/api/v1/sessions/${lesson.sessionId}/exercise/answer") { bearer(childToken)
+                jsonBody("""{"sessionExerciseId":"${state.sessionExerciseId}","selectedOptionId":"$fish","secondaryValue":"$fish","clientEventId":"${java.util.UUID.randomUUID()}"}""") }
+            assertEquals(HttpStatusCode.OK, answer.status)
+            val body = json.decodeFromString<AnswerExerciseResponse>(answer.bodyAsText())
+            assertTrue(body.isCorrect); assertEquals(fish, body.secondaryValue); assertEquals(1, body.progressDone); assertEquals(6, body.progressTotal)
+            received = withTimeout(2_000) { (incoming.receive() as Frame.Text).readText() }
+        }
+        val event = json.decodeFromString<AnswerReceivedEvent>(received)
+        assertEquals("ANSWER_RECEIVED", event.type); assertEquals(fish, event.secondaryValue); assertEquals(1, event.progressDone); assertEquals(6, event.progressTotal)
+
+        val childState = json.decodeFromString<ExerciseStateResponse>(client.get("/api/v1/sessions/${lesson.sessionId}/exercise/state") { bearer(childToken) }.bodyAsText())
+        assertEquals(listOf(fish), childState.solvedOptionIds); assertEquals(1, childState.progressDone); assertEquals(6, childState.progressTotal)
     }
 
     private fun withServer(block: suspend ApplicationTestBuilder.(InMemorySessionRepository, InMemorySaasRepository, MutableClock) -> Unit) = testApplication {

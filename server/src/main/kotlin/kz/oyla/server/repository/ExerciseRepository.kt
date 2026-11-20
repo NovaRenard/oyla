@@ -46,7 +46,9 @@ data class ExerciseAttemptRecord(
     val isCorrect: Boolean,
     val responseTimeMs: Long,
     val clientEventId: UUID,
-    val createdAt: Instant
+    val createdAt: Instant,
+    /** MEMORY: second card option id; SORT: target group "A"/"B"; SHADOW: shadow option id; null otherwise. */
+    val secondaryValue: String? = null
 )
 
 interface ExerciseRepository {

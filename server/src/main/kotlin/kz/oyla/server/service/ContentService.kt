@@ -13,6 +13,9 @@ import kz.oyla.server.model.ContentOwnership
 import kz.oyla.server.model.ContentStatus
 import kz.oyla.server.model.ExerciseSnapshot
 import kz.oyla.server.model.ExerciseSnapshotOption
+import kz.oyla.server.model.GameExerciseConfig
+import kz.oyla.server.model.isChoiceLike
+import kz.oyla.server.model.isGame
 import kz.oyla.server.model.LessonTemplateItemRecord
 import kz.oyla.server.model.LessonTemplateRecord
 import kz.oyla.server.model.LessonTemplateSnapshot
@@ -26,6 +29,7 @@ import kz.oyla.server.model.dto.CreateLessonTemplateRequest
 import kz.oyla.server.model.dto.DeviceLessonTemplateDto
 import kz.oyla.server.model.dto.ExerciseOptionContentDto
 import kz.oyla.server.model.dto.ExerciseOptionInput
+import kz.oyla.server.model.dto.GameExerciseConfigDto
 import kz.oyla.server.model.dto.LessonTemplateDto
 import kz.oyla.server.model.dto.LessonTemplateItemDto
 import kz.oyla.server.model.dto.LessonTemplateItemInput
@@ -71,10 +75,11 @@ class ContentService(
         val instruction = request.instructionText?.required("Инструкция", 1000) ?: current.instructionText
         val audio = request.instructionAudioAssetId?.uuidOrNull("Аудио") ?: current.instructionAudioAssetId
         validateMedia(context.center.id, audio, MediaType.AUDIO)
-        val options = if (current.activityType == ActivityType.SINGLE_CHOICE) request.options?.let { options(context.center.id, id, it) } ?: current.options else emptyList()
+        val options = if (current.activityType != ActivityType.WHITEBOARD) request.options?.let { options(context.center.id, id, current.activityType, it) } ?: current.options else emptyList()
         val whiteboard = if (current.activityType == ActivityType.WHITEBOARD) request.whiteboardConfig?.let { whiteboardConfig(context.center.id, it) } ?: current.whiteboardConfig else null
-        validateDefinition(current.activityType, options, whiteboard)
-        val updated = current.copy(title = title, instructionText = instruction, instructionAudioAssetId = audio, options = options, whiteboardConfig = whiteboard, updatedAt = clock.instant())
+        val game = if (current.activityType.isGame) request.gameConfig?.let { gameConfig(context.center.id, current.activityType, it) } ?: current.gameConfig else null
+        validateDefinition(current.activityType, options, whiteboard, game)
+        val updated = current.copy(title = title, instructionText = instruction, instructionAudioAssetId = audio, options = options, whiteboardConfig = whiteboard, gameConfig = game, updatedAt = clock.instant())
         if (!repository.updateExercise(updated)) throw ApiException.notFound("Упражнение не найдено")
         audit(context, "EXERCISE_UPDATED", "EXERCISE", id, ipAddress)
         return updated.toDto(repository.templateUsageCount(id))
@@ -186,37 +191,127 @@ class ContentService(
 
     private suspend fun newExercise(centerId:UUID,request:CreateExerciseRequest,now:java.time.Instant):ContentExerciseRecord {
         val id=UUID.randomUUID();val audio=request.instructionAudioAssetId?.uuidOrNull("Аудио");validateMedia(centerId,audio,MediaType.AUDIO)
-        val options=if (request.activityType == ActivityType.SINGLE_CHOICE) options(centerId,id,request.options) else emptyList()
+        val options=if (request.activityType != ActivityType.WHITEBOARD) options(centerId,id,request.activityType,request.options) else emptyList()
         val whiteboard=if (request.activityType == ActivityType.WHITEBOARD) request.whiteboardConfig?.let { whiteboardConfig(centerId,it) } else null
-        validateDefinition(request.activityType, options, whiteboard)
-        return ContentExerciseRecord(id,centerId,ContentOwnership.CENTER,request.activityType,request.title.required("Название",160),request.instructionText.required("Инструкция",1000),audio,null,ContentStatus.ACTIVE,now,now,options,whiteboard)
+        val game=if (request.activityType.isGame) gameConfig(centerId,request.activityType,request.gameConfig ?: GameExerciseConfigDto()) else null
+        validateDefinition(request.activityType, options, whiteboard, game)
+        return ContentExerciseRecord(id,centerId,ContentOwnership.CENTER,request.activityType,request.title.required("Название",160),request.instructionText.required("Инструкция",1000),audio,null,ContentStatus.ACTIVE,now,now,options,whiteboard,gameConfig=game)
     }
-    private suspend fun options(centerId:UUID,exerciseId:UUID,values:List<ExerciseOptionInput>):List<ContentExerciseOptionRecord> {
+    private suspend fun options(centerId:UUID,exerciseId:UUID,type:ActivityType,values:List<ExerciseOptionInput>):List<ContentExerciseOptionRecord> {
         if(values.mapNotNull{it.id}.let{it.size != it.toSet().size}) throw ApiException.validation("Варианты не должны повторяться")
+        if(values.size > MaxOptions) throw ApiException.validation("Не больше $MaxOptions вариантов")
         return buildList { values.forEachIndexed { index,value ->
             val image=value.imageAssetId?.uuidOrNull("Изображение");validateMedia(centerId,image,MediaType.IMAGE)
-            add(ContentExerciseOptionRecord(value.id?.uuidOrNull("Вариант") ?: UUID.randomUUID(),exerciseId,value.label?.optional(160),image,null,index+1,value.isCorrect))
+            // Correctness, groups and letter order are only meaningful for their own activity type.
+            val correct = value.isCorrect && (type.isChoiceLike || type == ActivityType.POP)
+            val group = value.groupKey?.trim()?.uppercase()?.takeIf { type == ActivityType.SORT }
+            val sequence = value.sequenceIndex?.takeIf { type == ActivityType.WORD_BUILD }
+            add(ContentExerciseOptionRecord(value.id?.uuidOrNull("Вариант") ?: UUID.randomUUID(),exerciseId,value.label?.optional(160),image,null,index+1,correct,group,sequence))
         } }
     }
-    private fun validateDefinition(type: ActivityType, options:List<ContentExerciseOptionRecord>, whiteboard: WhiteboardExerciseConfig?) {
+    /** Type-specific rules; internal so tests can run them over the seeded SYSTEM content. */
+    internal fun validateDefinition(type: ActivityType, options:List<ContentExerciseOptionRecord>, whiteboard: WhiteboardExerciseConfig?, game: GameExerciseConfig? = null) {
+        fun requireContent() { if(options.any{it.label.isNullOrBlank() && it.imageAssetId==null && it.localImageAssetKey==null}) throw ApiException.validation("У варианта нужны название или изображение") }
+        fun requireSingleCorrect(message: String) { if(options.count{it.isCorrect} != 1) throw ApiException.validation(message) }
+        fun requirePicture(message: String) { if(game?.imageAssetKey.isNullOrBlank() && game?.imageAssetId == null) throw ApiException.validation(message) }
         when(type) {
             ActivityType.SINGLE_CHOICE -> {
                 if(options.size !in 2..6) throw ApiException.validation("SINGLE_CHOICE требует от 2 до 6 вариантов")
                 if(options.count{it.isCorrect} != 1) throw ApiException.validation("Нужен ровно один правильный вариант")
                 if(options.any{it.label.isNullOrBlank() && it.imageAssetId==null && it.localImageAssetKey==null}) throw ApiException.validation("У варианта нужны название или изображение")
             }
+            ActivityType.ODD_ONE -> {
+                if(options.size !in 3..6) throw ApiException.validation("«Что лишнее» требует от 3 до 6 вариантов")
+                requireSingleCorrect("Отметьте ровно один лишний вариант"); requireContent()
+            }
+            ActivityType.REMEMBER -> {
+                if(options.size !in 3..9) throw ApiException.validation("«Запомни и найди» требует от 3 до 9 вариантов")
+                requireSingleCorrect("Отметьте ровно одну картинку для запоминания"); requireContent()
+                val ms = game?.showTargetMs
+                if(ms != null && ms !in 1000..10000) throw ApiException.validation("Время показа должно быть от 1000 до 10000 мс")
+            }
+            ActivityType.MEMORY -> {
+                if(options.size !in 2..8) throw ApiException.validation("«Найди пару» требует от 2 до 8 карточек")
+                requireContent()
+            }
+            ActivityType.SORT -> {
+                if(options.size !in 2..8) throw ApiException.validation("«Разложи по группам» требует от 2 до 8 предметов")
+                requireContent()
+                if(options.any{it.groupKey != "A" && it.groupKey != "B"}) throw ApiException.validation("Каждый предмет должен относиться к группе A или B")
+                if(options.none{it.groupKey=="A"} || options.none{it.groupKey=="B"}) throw ApiException.validation("В обеих группах должен быть хотя бы один предмет")
+                val labels = game?.groupLabels.orEmpty()
+                if(labels.size != 2 || labels.any{it.isBlank() || it.length > 16}) throw ApiException.validation("Нужны две подписи групп не длиннее 16 символов")
+            }
+            ActivityType.WORD_BUILD -> {
+                if(options.size !in 2..10) throw ApiException.validation("«Собери слово» требует от 2 до 10 букв")
+                if(options.any{it.label.isNullOrBlank() || it.label.length > 2}) throw ApiException.validation("Каждая плитка должна содержать букву (не больше 2 символов)")
+                val sequence = options.mapNotNull{it.sequenceIndex}.sorted()
+                if(sequence.size < 2 || sequence != (1..sequence.size).toList()) throw ApiException.validation("Порядок букв слова должен идти от 1 без пропусков и повторов")
+                if(game?.imageAssetKey.isNullOrBlank() && game?.imageAssetId == null) throw ApiException.validation("Для слова нужна картинка")
+            }
+            ActivityType.POP -> {
+                if(options.size !in 3..9) throw ApiException.validation("«Лопни шарики» требует от 3 до 9 шариков")
+                requireContent()
+                if(options.none{it.isCorrect}) throw ApiException.validation("Отметьте хотя бы один шарик, который нужно лопнуть")
+                if(options.all{it.isCorrect}) throw ApiException.validation("Нужен хотя бы один шарик, который лопать не нужно")
+            }
+            ActivityType.SYLLABLES -> {
+                if(options.isNotEmpty()) throw ApiException.validation("«Слоги» не использует варианты ответа")
+                val syllables = game?.syllables.orEmpty()
+                if(syllables.size !in 2..6 || syllables.any{it.isBlank() || it.length > 4}) throw ApiException.validation("Нужно от 2 до 6 слогов, каждый не длиннее 4 символов")
+                requirePicture("Для слова нужна картинка")
+            }
+            ActivityType.SHADOW -> {
+                if(options.size !in 2..5) throw ApiException.validation("«Найди тень» требует от 2 до 5 картинок")
+                if(options.any{it.imageAssetId==null && it.localImageAssetKey.isNullOrBlank()}) throw ApiException.validation("У каждого варианта должна быть картинка")
+            }
+            ActivityType.COUNT -> {
+                if(options.size !in 2..6) throw ApiException.validation("«Сколько?» требует от 2 до 6 вариантов")
+                val numbers = options.map { option -> option.label?.takeIf { it.matches(CountLabelPattern) }?.toInt()?.takeIf { it in 1..10 } }
+                if(numbers.any{it == null}) throw ApiException.validation("Каждый вариант должен быть числом от 1 до 10")
+                if(numbers.distinct().size != numbers.size) throw ApiException.validation("Числа в вариантах не должны повторяться")
+                requireSingleCorrect("Отметьте ровно один правильный ответ")
+                val count = game?.countValue
+                if(count == null || count !in 1..10) throw ApiException.validation("Укажите количество предметов от 1 до 10")
+                if(numbers[options.indexOfFirst{it.isCorrect}] != count) throw ApiException.validation("Правильный ответ должен совпадать с количеством предметов")
+                requirePicture("Нужна картинка предмета для счёта")
+            }
+            ActivityType.MAZE -> {
+                if(options.isNotEmpty()) throw ApiException.validation("Лабиринт не использует варианты ответа")
+                if(game?.mazeLayout !in GameExerciseConfig.MazeLayouts) throw ApiException.validation("Выберите форму лабиринта: wave, zigzag или spiral")
+            }
             ActivityType.WHITEBOARD -> {
                 val config = whiteboard ?: throw ApiException.validation("Для WHITEBOARD нужны настройки доски")
                 if (config.availableColors.size !in 4..6 || config.availableColors.distinct().size != config.availableColors.size) throw ApiException.validation("Палитра доски должна содержать от 4 до 6 разных цветов")
                 if (config.defaultColor !in config.availableColors) throw ApiException.validation("Основной цвет должен быть в палитре")
+                if (config.traceTemplate != null && config.traceTemplate !in WhiteboardExerciseConfig.TraceTemplates) throw ApiException.validation("Неизвестный шаблон доски")
                 if (options.isNotEmpty()) throw ApiException.validation("WHITEBOARD не использует варианты ответа")
             }
         }
     }
+    /** Keeps only the fields relevant to [type]; derived fields (imageUrl, targetOptionId) are never stored. */
+    private suspend fun gameConfig(centerId: UUID, type: ActivityType, input: GameExerciseConfigDto): GameExerciseConfig = when(type) {
+        ActivityType.SORT -> GameExerciseConfig(groupLabels = input.groupLabels.map { it.trim() })
+        ActivityType.REMEMBER -> GameExerciseConfig(showTargetMs = input.showTargetMs)
+        ActivityType.MAZE -> GameExerciseConfig(mazeLayout = input.mazeLayout?.trim()?.lowercase())
+        ActivityType.WORD_BUILD -> pictureConfig(centerId, input)
+        ActivityType.SYLLABLES -> pictureConfig(centerId, input).copy(syllables = input.syllables.map { it.trim() })
+        ActivityType.COUNT -> pictureConfig(centerId, input).copy(countValue = input.countValue)
+        else -> GameExerciseConfig()
+    }
+    /** WORD_BUILD, SYLLABLES and COUNT picture: an APK asset key or an uploaded IMAGE of this center. */
+    private suspend fun pictureConfig(centerId: UUID, input: GameExerciseConfigDto): GameExerciseConfig {
+        val image = input.imageAssetId?.takeIf { it.isNotBlank() }?.uuidOrNull("Изображение")
+        validateMedia(centerId, image, MediaType.IMAGE)
+        val key = input.imageAssetKey?.trim()?.takeIf { it.isNotEmpty() }
+        if (key != null && (key.length > 120 || !key.matches(AssetKeyPattern))) throw ApiException.validation("Некорректный ключ картинки")
+        return GameExerciseConfig(imageAssetKey = key, imageAssetId = image?.toString())
+    }
     private suspend fun whiteboardConfig(centerId: UUID, input: WhiteboardExerciseConfigDto): WhiteboardExerciseConfig {
         val background = input.backgroundAssetId?.uuidOrNull("Фон")
         validateMedia(centerId, background, MediaType.IMAGE)
-        return WhiteboardExerciseConfig(background?.toString(), null, input.childDrawingInitiallyEnabled, input.availableColors, input.defaultColor, input.defaultBrushSize, input.allowEraser, input.allowClear)
+        val template = input.traceTemplate?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+        return WhiteboardExerciseConfig(background?.toString(), null, input.childDrawingInitiallyEnabled, input.availableColors, input.defaultColor, input.defaultBrushSize, input.allowEraser, input.allowClear, template)
     }
     private suspend fun templateItems(centerId:UUID,templateId:UUID,values:List<LessonTemplateItemInput>):List<LessonTemplateItemRecord> =
         validateTemplateExerciseIds(centerId,values).mapIndexed { index,id -> LessonTemplateItemRecord(UUID.randomUUID(),templateId,id,index+1) }
@@ -234,7 +329,7 @@ class ContentService(
     private suspend fun audit(context:CenterContext,action:String,entity:String,id:UUID,ip:String?) { tenants.recordAudit(AuditLogRecord(UUID.randomUUID(),context.center.id,AuditActorType.USER,context.user.id,action,entity,id,"{}",ip,clock.instant())) }
 
     private fun ContentExerciseRecord.toDto(usage:Int)=ContentExerciseDto(id.toString(),ownership,activityType,title,instructionText,instructionAudioAssetId?.toString(),instructionAudioAssetId?.url(),localAudioAssetKey,status,
-        options.sortedBy{it.sortOrder}.map { option -> ExerciseOptionContentDto(option.id.toString(),option.label,option.imageAssetId?.toString(),option.imageAssetId?.url(),option.localImageAssetKey,option.sortOrder,option.isCorrect) },whiteboardConfig?.toDto(),usage,createdAt.toString(),updatedAt.toString())
+        options.sortedBy{it.sortOrder}.map { option -> ExerciseOptionContentDto(option.id.toString(),option.label,option.imageAssetId?.toString(),option.imageAssetId?.url(),option.localImageAssetKey,option.sortOrder,option.isCorrect,option.groupKey,option.sequenceIndex) },whiteboardConfig?.toDto(),usage,createdAt.toString(),updatedAt.toString(),gameConfig?.toDto())
     private suspend fun LessonTemplateRecord.toDto(centerId:UUID):LessonTemplateDto {
         val itemDtos = buildList { for (item in items.sortedBy { it.position }) {
             val exercise=repository.findExerciseAccessible(centerId,item.exerciseId)
@@ -244,8 +339,11 @@ class ContentService(
     }
     private fun MediaAssetRecord.toDto()=MediaAssetDto(id.toString(),ownership,type,originalFilename,mimeType,sizeBytes,id.url(),createdAt.toString())
     private fun ContentExerciseRecord.toSnapshot()=ExerciseSnapshot(id.toString(),activityType,title,instructionText,instructionAudioAssetId?.toString(),instructionAudioAssetId?.url(),localAudioAssetKey,
-        options.sortedBy{it.sortOrder}.map { ExerciseSnapshotOption(it.id.toString(),it.label,it.imageAssetId?.toString(),it.imageAssetId?.url(),it.localImageAssetKey,it.sortOrder) },options.singleOrNull{it.isCorrect}?.id?.toString(),whiteboardConfig?.copy(backgroundUrl = whiteboardConfig.backgroundAssetId?.let { "/api/v1/media/$it" }))
-    private fun WhiteboardExerciseConfig.toDto() = WhiteboardExerciseConfigDto(backgroundAssetId, backgroundAssetId?.let { "/api/v1/media/$it" }, childDrawingInitiallyEnabled, availableColors, defaultColor, defaultBrushSize, allowEraser, allowClear)
+        options.sortedBy{it.sortOrder}.map { ExerciseSnapshotOption(it.id.toString(),it.label,it.imageAssetId?.toString(),it.imageAssetId?.url(),it.localImageAssetKey,it.sortOrder,it.groupKey,it.sequenceIndex,it.isCorrect.takeIf { activityType == ActivityType.POP }) },
+        options.singleOrNull{it.isCorrect}?.id?.toString()?.takeIf { activityType.isChoiceLike },whiteboardConfig?.copy(backgroundUrl = whiteboardConfig.backgroundAssetId?.let { "/api/v1/media/$it" }),
+        gameConfig?.copy(imageUrl = gameConfig.imageAssetId?.let { "/api/v1/media/$it" }, targetOptionId = null))
+    private fun GameExerciseConfig.toDto() = GameExerciseConfigDto(groupLabels, showTargetMs, mazeLayout, imageAssetKey, imageAssetId, imageAssetId?.let { "/api/v1/media/$it" }, syllables = syllables, countValue = countValue)
+    private fun WhiteboardExerciseConfig.toDto() = WhiteboardExerciseConfigDto(backgroundAssetId, backgroundAssetId?.let { "/api/v1/media/$it" }, childDrawingInitiallyEnabled, availableColors, defaultColor, defaultBrushSize, allowEraser, allowClear, traceTemplate)
     private fun UUID.url()="/api/v1/media/$this"
     private fun String.required(label:String,max:Int):String=trim().takeIf{it.isNotEmpty() && it.length<=max} ?: throw ApiException.validation("$label обязательно и не длиннее $max символов")
     private fun String.optional(max:Int):String?=trim().takeIf{it.isNotEmpty()}?.takeIf{it.length<=max} ?: if(trim().isEmpty()) null else throw ApiException.validation("Поле не длиннее $max символов")
@@ -276,6 +374,9 @@ class ContentService(
         }
     }
     private companion object {
+        const val MaxOptions = 10
+        val AssetKeyPattern = Regex("[a-z0-9_]+")
+        val CountLabelPattern = Regex("[0-9]{1,2}")
         val AllowedMedia = mapOf(
             MediaType.IMAGE to mapOf(
                 "image/jpeg" to AcceptedMedia("image/jpeg", ".jpg", 5L * 1024 * 1024),

@@ -86,7 +86,8 @@ class SessionEventHub(private val json: Json) {
             sessionId = sessionId.toString(), sessionExerciseId = answer.sessionExerciseId,
             selectedOptionId = answer.selectedOptionId, selectedOptionLabel = answer.selectedOptionLabel,
             isCorrect = answer.isCorrect, attemptNumber = answer.attemptNumber,
-            responseTimeMs = answer.responseTimeMs, exerciseStatus = answer.exerciseStatus
+            responseTimeMs = answer.responseTimeMs, exerciseStatus = answer.exerciseStatus,
+            secondaryValue = answer.secondaryValue, progressDone = answer.progressDone, progressTotal = answer.progressTotal
         )
         publishToAll(sessionId, json.encodeToString(received))
         if (answer.exerciseStatus == kz.oyla.server.model.ExerciseStatus.COMPLETED) {
@@ -105,7 +106,9 @@ class SessionEventHub(private val json: Json) {
             correctOptionId = specialistState.correctOptionId, currentPosition = specialistState.currentPosition,
             totalExercises = specialistState.totalExercises, attemptCount = specialistState.attemptCount,
             latestAnswer = specialistState.latestAnswer, startedAt = specialistState.startedAt,
-            planCompleted = specialistState.planCompleted, whiteboardState = specialistState.whiteboardState
+            planCompleted = specialistState.planCompleted, whiteboardState = specialistState.whiteboardState,
+            progressDone = specialistState.progressDone, progressTotal = specialistState.progressTotal,
+            solvedOptionIds = specialistState.solvedOptionIds
         )
         publishToRole(sessionId, DeviceRole.SPECIALIST, json.encodeToString(event))
         publishToRole(sessionId, DeviceRole.CHILD, json.encodeToString(event.copy(exercise = null, correctOptionId = null)))

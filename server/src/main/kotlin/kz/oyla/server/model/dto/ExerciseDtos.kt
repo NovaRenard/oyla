@@ -13,7 +13,13 @@ data class ExerciseOptionDto(
     val label: String,
     val imageAssetKey: String,
     val position: Int,
-    val imageUrl: String? = null
+    val imageUrl: String? = null,
+    /** SORT only: "A" or "B". */
+    val groupKey: String? = null,
+    /** WORD_BUILD only: 1..n for letters of the word, null for distractor letters. */
+    val sequenceIndex: Int? = null,
+    /** POP only (both roles): true for balloons that must be popped; null for every other type. */
+    val isTarget: Boolean? = null
 )
 
 @Serializable
@@ -25,7 +31,25 @@ data class ExerciseDto(
     val title: String? = null,
     val activityType: String = "SINGLE_CHOICE",
     val audioUrl: String? = null,
-    val whiteboardConfig: WhiteboardExerciseConfigDto? = null
+    val whiteboardConfig: WhiteboardExerciseConfigDto? = null,
+    val gameConfig: GameExerciseConfigDto? = null
+)
+
+/** Settings for ODD_ONE, REMEMBER, MEMORY, SORT, WORD_BUILD, MAZE, POP, SYLLABLES, SHADOW and COUNT. */
+@Serializable
+data class GameExerciseConfigDto(
+    val groupLabels: List<String> = emptyList(),
+    val showTargetMs: Int? = null,
+    val mazeLayout: String? = null,
+    val imageAssetKey: String? = null,
+    val imageAssetId: String? = null,
+    val imageUrl: String? = null,
+    /** Filled only in session DTOs of REMEMBER exercises; ignored on content input. */
+    val targetOptionId: String? = null,
+    /** SYLLABLES only: 2..6 non-blank syllables, each up to 4 characters. */
+    val syllables: List<String> = emptyList(),
+    /** COUNT only: 1..10, must equal the correct option's label. */
+    val countValue: Int? = null
 )
 
 @Serializable data class WhiteboardPointDto(val x: Float, val y: Float)
@@ -80,7 +104,9 @@ data class StartExerciseResponse(
 data class AnswerExerciseRequest(
     val sessionExerciseId: String,
     val selectedOptionId: String,
-    val clientEventId: String
+    val clientEventId: String,
+    /** MEMORY: second card option id; SORT: "A" or "B"; SHADOW: shadow (slot) option id; ignored otherwise. */
+    val secondaryValue: String? = null
 )
 
 @Serializable
@@ -91,7 +117,10 @@ data class AnswerExerciseResponse(
     val isCorrect: Boolean,
     val attemptNumber: Int,
     val responseTimeMs: Long,
-    val exerciseStatus: ExerciseStatus
+    val exerciseStatus: ExerciseStatus,
+    val secondaryValue: String? = null,
+    val progressDone: Int = 0,
+    val progressTotal: Int = 0
 )
 
 @Serializable
@@ -111,7 +140,11 @@ data class ExerciseStateResponse(
     val hasPrevious: Boolean = false,
     val hasNext: Boolean = true,
     val planCompleted: Boolean = false
-    ,val whiteboardState: WhiteboardStateSnapshotDto? = null
+    ,val whiteboardState: WhiteboardStateSnapshotDto? = null,
+    val progressDone: Int = 0,
+    val progressTotal: Int = 0,
+    /** MEMORY: matched ids; SORT: correctly placed ids; WORD_BUILD: used ids in order; POP: popped ids; SHADOW: placed ids. */
+    val solvedOptionIds: List<String> = emptyList()
 )
 
 @Serializable

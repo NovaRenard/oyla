@@ -302,7 +302,8 @@ class DatabaseSessionRepository : SessionRepository {
                       COALESCE(se.snapshot_json ->> 'instructionText', e.instruction_text) AS instruction_text, se.status,
                       (SELECT COUNT(*) FROM attempts a WHERE a.session_exercise_id = se.id) AS attempt_count,
                       (SELECT COUNT(*) FROM attempts a WHERE a.session_exercise_id = se.id AND a.is_correct = FALSE) AS incorrect_attempts,
-                      (SELECT MIN(a.response_time_ms) FROM attempts a WHERE a.session_exercise_id = se.id AND a.is_correct = TRUE) AS time_to_correct_ms,
+                      (SELECT CASE WHEN se.activity_type IN ('MEMORY', 'SORT', 'WORD_BUILD', 'POP', 'SHADOW') THEN MAX(a.response_time_ms) ELSE MIN(a.response_time_ms) END
+                         FROM attempts a WHERE a.session_exercise_id = se.id AND a.is_correct = TRUE) AS time_to_correct_ms,
                       (SELECT COUNT(*) FROM whiteboard_strokes ws WHERE ws.session_exercise_id = se.id) AS stroke_count,
                       (SELECT COUNT(*) FROM whiteboard_strokes ws WHERE ws.session_exercise_id = se.id AND ws.actor_role = 'CHILD') AS child_stroke_count,
                       (SELECT COUNT(*) FROM whiteboard_strokes ws WHERE ws.session_exercise_id = se.id AND ws.actor_role = 'SPECIALIST') AS specialist_stroke_count

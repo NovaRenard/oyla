@@ -20,7 +20,21 @@ import kz.oyla.server.model.dto.CreateActivationCodeRequest
 import kz.oyla.server.model.dto.RegisterCenterRequest
 import kz.oyla.server.model.dto.UpdateDeviceRequest
 import kz.oyla.server.model.dto.WhiteboardPointDto
+import kz.oyla.server.model.ActivityType
+import kz.oyla.server.model.ContentExerciseOptionRecord
+import kz.oyla.server.model.ContentExerciseRecord
+import kz.oyla.server.model.ContentOwnership
+import kz.oyla.server.model.ContentStatus
+import kz.oyla.server.model.GameExerciseConfig
+import kz.oyla.server.model.WhiteboardExerciseConfig
+import kz.oyla.server.repository.DatabaseContentRepository
+import kz.oyla.server.repository.InMemoryContentRepository
+import kz.oyla.server.repository.LessonTemplateFilter
+import kz.oyla.server.repository.DatabaseExerciseRepository
 import kz.oyla.server.repository.DatabaseSaasRepository
+import kz.oyla.server.repository.ExerciseAttemptRecord
+import kz.oyla.server.service.ContentService
+import kz.oyla.server.storage.LocalMediaStorage
 import kz.oyla.server.repository.DatabaseWhiteboardRepository
 import kz.oyla.server.repository.WhiteboardStrokeInput
 import kz.oyla.server.service.ApiException
@@ -165,6 +179,138 @@ class PostgresSaasIntegrationTest {
         assertTrue(afterClear.strokes.isEmpty())
         assertEquals(1, afterClear.state.clearRevision)
         assertEquals(2, queryInt("SELECT COUNT(*) FROM whiteboard_strokes WHERE session_exercise_id = '$exerciseId'"))
+    }
+
+    @Test fun `game content, option columns and attempt secondary values round-trip through PostgreSQL`() = runBlocking {
+        val content = DatabaseContentRepository()
+        val contentService = ContentService(content, repository, LocalMediaStorage("build/integration-media"), clock)
+        val games = contentService.snapshotTemplate(UUID.randomUUID(), UUID.fromString("00000000-0000-0000-0000-000000000501"))
+        assertEquals(listOf(ActivityType.MEMORY, ActivityType.REMEMBER, ActivityType.ODD_ONE, ActivityType.SORT, ActivityType.MAZE, ActivityType.WORD_BUILD), games.exercises.map { it.activityType })
+        assertEquals(3000, games.exercises[1].gameConfig?.showTargetMs)
+        assertEquals("00000000-0000-0000-0000-000000000411", games.exercises[1].correctOptionId)
+        assertEquals(listOf("A", "A", "B", "B"), games.exercises[3].options.map { it.groupKey })
+        assertEquals(listOf("Р", "Л"), games.exercises[3].gameConfig?.groupLabels)
+        assertEquals("wave", games.exercises[4].gameConfig?.mazeLayout)
+        assertEquals(listOf(1, 2, 3, null, null), games.exercises[5].options.map { it.sequenceIndex })
+        assertEquals("exercise_cat", games.exercises[5].gameConfig?.imageAssetKey)
+        assertEquals(5, contentService.snapshotTemplate(UUID.randomUUID(), UUID.fromString("00000000-0000-0000-0000-000000000502")).exercises.size)
+
+        val centerId = UUID.fromString(register("Games", "games@example.com").centerId())
+        val exerciseId = UUID.randomUUID(); val now = Instant.parse("2026-08-09T00:00:00Z")
+        val letters = listOf("М" to 1, "А" to 2, "М" to 3, "А" to 4, "О" to null, "К" to null, "Т" to null, "Л" to null, "Р" to null, "С" to null)
+        val record = ContentExerciseRecord(exerciseId, centerId, ContentOwnership.CENTER, ActivityType.WORD_BUILD, "МАМА", "Собери слово", null, null, ContentStatus.ACTIVE, now, now,
+            letters.mapIndexed { index, (label, sequence) -> ContentExerciseOptionRecord(UUID.randomUUID(), exerciseId, label, null, null, index + 1, false, null, sequence) },
+            gameConfig = GameExerciseConfig(imageAssetKey = "exercise_mama", imageUrl = "/derived", targetOptionId = "derived"))
+        content.insertExercise(record)
+        val stored = checkNotNull(content.findExercise(exerciseId))
+        assertEquals(letters.map { it.second }, stored.options.map { it.sequenceIndex })
+        assertEquals(GameExerciseConfig(imageAssetKey = "exercise_mama"), stored.gameConfig)
+        content.updateExercise(stored.copy(activityType = ActivityType.WORD_BUILD, gameConfig = GameExerciseConfig(imageAssetKey = "exercise_cat")))
+        assertEquals("exercise_cat", content.findExercise(exerciseId)?.gameConfig?.imageAssetKey)
+
+        val sessionId = UUID.randomUUID(); val sessionExerciseId = UUID.randomUUID(); seedWhiteboardSession(sessionId, sessionExerciseId)
+        val attempts = DatabaseExerciseRepository()
+        assertTrue(attempts.createAttempt(ExerciseAttemptRecord(UUID.randomUUID(), sessionExerciseId, "item", 1, true, 100, UUID.randomUUID(), now, secondaryValue = "B")))
+        assertTrue(attempts.createAttempt(ExerciseAttemptRecord(UUID.randomUUID(), sessionExerciseId, "finish", 2, true, 200, UUID.randomUUID(), now)))
+        assertEquals(listOf("B", null), attempts.findAttempts(sessionExerciseId).map { it.secondaryValue })
+    }
+
+    @Test fun `V12 games are seeded and syllables, countValue and POP targets round-trip through PostgreSQL`() = runBlocking {
+        val content = DatabaseContentRepository()
+        val contentService = ContentService(content, repository, LocalMediaStorage("build/integration-media"), clock)
+        val funGames = contentService.snapshotTemplate(UUID.randomUUID(), UUID.fromString("00000000-0000-0000-0000-000000000503"))
+        assertEquals("Весёлые игры", funGames.name); assertEquals("Шарики, слоги, тени и счёт", funGames.description)
+        assertEquals(listOf(ActivityType.POP, ActivityType.SYLLABLES, ActivityType.SHADOW, ActivityType.COUNT, ActivityType.MEMORY, ActivityType.ODD_ONE), funGames.exercises.map { it.activityType })
+        assertEquals(listOf("307", "308", "309", "310", "301", "303").map { "00000000-0000-0000-0000-000000000$it" }, funGames.exercises.map { it.sourceExerciseId })
+        val pop = funGames.exercises[0]
+        assertEquals(listOf("ракета", "кот", "рыба", "дом", "груша", "утка"), pop.options.map { it.label })
+        assertEquals(listOf(true, false, true, false, true, false), pop.options.map { it.isTarget })
+        assertEquals(listOf("РА", "КЕ", "ТА"), funGames.exercises[1].gameConfig?.syllables)
+        assertEquals("exercise_rocket", funGames.exercises[1].gameConfig?.imageAssetKey)
+        assertEquals(listOf("exercise_fish", "exercise_duck", "exercise_car"), funGames.exercises[2].options.map { it.localImageAssetKey })
+        val count = funGames.exercises[3]
+        assertEquals(4, count.gameConfig?.countValue); assertEquals("exercise_fish", count.gameConfig?.imageAssetKey)
+        assertEquals("00000000-0000-0000-0000-000000000474", count.correctOptionId)
+        assertEquals(listOf<String?>(null, null, null, null, null), count.options.map { it.localImageAssetKey })
+        // The original V11 templates are untouched.
+        assertEquals(6, contentService.snapshotTemplate(UUID.randomUUID(), UUID.fromString("00000000-0000-0000-0000-000000000501")).exercises.size)
+
+        val centerId = UUID.fromString(register("More games", "more-games@example.com").centerId())
+        val now = Instant.parse("2026-11-20T00:00:00Z")
+        val syllablesId = UUID.randomUUID()
+        content.insertExercise(ContentExerciseRecord(syllablesId, centerId, ContentOwnership.CENTER, ActivityType.SYLLABLES, "МАМА", "Постучи", null, null, ContentStatus.ACTIVE, now, now,
+            gameConfig = GameExerciseConfig(syllables = listOf("МА", "МА"), imageAssetKey = "exercise_mama", imageUrl = "/derived")))
+        assertEquals(GameExerciseConfig(syllables = listOf("МА", "МА"), imageAssetKey = "exercise_mama"), content.findExercise(syllablesId)?.gameConfig)
+        val countId = UUID.randomUUID()
+        content.insertExercise(ContentExerciseRecord(countId, centerId, ContentOwnership.CENTER, ActivityType.COUNT, "Сколько?", "Посчитай", null, null, ContentStatus.ACTIVE, now, now,
+            listOf("2" to false, "7" to true).mapIndexed { index, (label, correct) -> ContentExerciseOptionRecord(UUID.randomUUID(), countId, label, null, null, index + 1, correct) },
+            gameConfig = GameExerciseConfig(countValue = 7, imageAssetKey = "exercise_fish")))
+        val storedCount = checkNotNull(content.findExercise(countId))
+        assertEquals(7, storedCount.gameConfig?.countValue); assertEquals(listOf(false, true), storedCount.options.map { it.isCorrect })
+        content.updateExercise(storedCount.copy(gameConfig = GameExerciseConfig(countValue = 2, imageAssetKey = "exercise_fish")))
+        assertEquals(2, content.findExercise(countId)?.gameConfig?.countValue)
+        assertEquals("2", queryText("SELECT game_config->>'countValue' FROM content_exercises WHERE id = '$countId'"))
+        assertEquals("[\"МА\", \"МА\"]", queryText("SELECT game_config->'syllables' FROM content_exercises WHERE id = '$syllablesId'"))
+        assertEquals(1, queryInt("SELECT COUNT(*) FROM content_exercises WHERE id = '00000000-0000-0000-0000-000000000310' AND game_config->>'countValue' = '4'"))
+
+        val sessionId = UUID.randomUUID(); val sessionExerciseId = UUID.randomUUID(); seedWhiteboardSession(sessionId, sessionExerciseId)
+        val attempts = DatabaseExerciseRepository()
+        val shadow = "00000000-0000-0000-0000-000000000461"
+        assertTrue(attempts.createAttempt(ExerciseAttemptRecord(UUID.randomUUID(), sessionExerciseId, shadow, 1, true, 100, UUID.randomUUID(), now, secondaryValue = shadow)))
+        assertEquals(listOf(shadow), attempts.findAttempts(sessionExerciseId).map { it.secondaryValue })
+    }
+
+    @Test fun `V13 SYSTEM content in PostgreSQL mirrors the in-memory seeds`() = runBlocking {
+        val content = DatabaseContentRepository(); val memory = InMemoryContentRepository(); val anyCenter = UUID.randomUUID()
+        val dbExercises = content.listExercises(anyCenter).filter { it.ownership == ContentOwnership.SYSTEM }.associateBy { it.id }
+        val memExercises = memory.listExercises(anyCenter).filter { it.ownership == ContentOwnership.SYSTEM }
+        assertEquals(memExercises.map { it.id }.toSet(), dbExercises.keys)
+        memExercises.forEach { expected ->
+            val actual = checkNotNull(dbExercises[expected.id])
+            // V8 option ids are md5-derived in SQL and random in memory; every later seed has the same deterministic ids.
+            val legacy = expected.legacyKey != null
+            fun ContentExerciseRecord.normalised() = copy(createdAt = Instant.EPOCH, updatedAt = Instant.EPOCH,
+                options = options.map { if (legacy) it.copy(id = UUID(0, 0), exerciseId = id) else it })
+            assertEquals("${expected.id} «${expected.title}»", expected.normalised(), actual.normalised())
+        }
+        val dbTemplates = content.listTemplates(anyCenter, LessonTemplateFilter()).filter { it.ownership == ContentOwnership.SYSTEM }.associateBy { it.id }
+        memory.listTemplates(anyCenter, LessonTemplateFilter()).filter { it.ownership == ContentOwnership.SYSTEM }.forEach { expected ->
+            val actual = checkNotNull(dbTemplates[expected.id]) { "missing template ${expected.name}" }
+            assertEquals(expected.name, actual.name); assertEquals(expected.description, actual.description); assertEquals(ContentStatus.ACTIVE, actual.status)
+            assertEquals(expected.items.map { it.exerciseId }, actual.items.map { it.exerciseId })
+            // V8 template item ids are random in memory; V11+ items share deterministic ids.
+            if (expected.id != UUID.fromString("00000000-0000-0000-0000-000000000201")) assertEquals(expected.items.map { it.id }, actual.items.map { it.id })
+        }
+        assertEquals(44, queryInt("SELECT COUNT(*) FROM content_exercises WHERE id::text BETWEEN '00000000-0000-0000-0000-000000000601' AND '00000000-0000-0000-0000-000000000699'"))
+        assertEquals(7, queryInt("SELECT COUNT(*) FROM whiteboard_exercise_configs WHERE exercise_id::text LIKE '00000000-0000-0000-0000-0000000006%'"))
+        assertEquals("sun", queryText("SELECT trace_template FROM whiteboard_exercise_configs WHERE exercise_id = '00000000-0000-0000-0000-000000000638'"))
+        val contentService = ContentService(content, repository, LocalMediaStorage("build/integration-media"), clock)
+        listOf(901, 902, 903, 904, 905).forEach { n ->
+            val snapshot = contentService.snapshotTemplate(anyCenter, UUID.fromString("00000000-0000-0000-0000-000000000%03d".format(n)))
+            assertTrue(snapshot.exercises.size in 5..7)
+        }
+        val motor = contentService.snapshotTemplate(anyCenter, UUID.fromString("00000000-0000-0000-0000-000000000904"))
+        assertEquals("sun", motor.exercises.first { it.sourceExerciseId.endsWith("638") }.whiteboardConfig?.traceTemplate)
+    }
+
+    @Test fun `whiteboard trace template round-trips through PostgreSQL and is constrained`() = runBlocking {
+        val content = DatabaseContentRepository()
+        val centerId = UUID.fromString(register("Boards", "boards@example.com").centerId())
+        val now = Instant.parse("2026-11-20T00:00:00Z"); val exerciseId = UUID.randomUUID()
+        val config = WhiteboardExerciseConfig(availableColors = WhiteboardColor.entries.toList(), defaultColor = WhiteboardColor.ORANGE, traceTemplate = "flower")
+        content.insertExercise(ContentExerciseRecord(exerciseId, centerId, ContentOwnership.CENTER, ActivityType.WHITEBOARD, "Цветок", "Обведи", null, null, ContentStatus.ACTIVE, now, now, whiteboardConfig = config))
+        assertEquals(config, content.findExercise(exerciseId)?.whiteboardConfig)
+        val stored = checkNotNull(content.findExercise(exerciseId))
+        assertTrue(content.updateExercise(stored.copy(whiteboardConfig = config.copy(traceTemplate = null))))
+        assertNull(content.findExercise(exerciseId)?.whiteboardConfig?.traceTemplate)
+        assertTrue(content.updateExercise(stored.copy(whiteboardConfig = config.copy(traceTemplate = "heart"))))
+        assertEquals("heart", queryText("SELECT trace_template FROM whiteboard_exercise_configs WHERE exercise_id = '$exerciseId'"))
+        val rejected = runCatching {
+            postgres.createConnection("").use { connection ->
+                connection.createStatement().use { it.executeUpdate("UPDATE whiteboard_exercise_configs SET trace_template = 'dragon' WHERE exercise_id = '$exerciseId'") }
+            }
+        }.exceptionOrNull()
+        assertTrue("CHECK must reject unknown templates, was $rejected", rejected is SQLException)
     }
 
     private suspend fun register(name: String, email: String) = service.registerCenter(RegisterCenterRequest(name, "Owner", null, email, "Password123"), null)
