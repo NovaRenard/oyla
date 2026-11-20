@@ -4,6 +4,7 @@ import kz.oyla.app.data.remote.SocketConnectionState
 import kz.oyla.app.data.remote.dto.AnswerExerciseResponse
 import kz.oyla.app.data.remote.dto.ExerciseDto
 import kz.oyla.app.data.remote.dto.ExerciseStateResponse
+import kz.oyla.app.data.remote.dto.GameExerciseConfigDto
 import kz.oyla.app.data.remote.dto.WhiteboardBrushSize
 import kz.oyla.app.data.remote.dto.WhiteboardColor
 import kz.oyla.app.data.remote.dto.WhiteboardExerciseConfigDto
@@ -25,8 +26,15 @@ data class ExerciseOptionUiModel(
     val label: String,
     val imageAssetKey: String,
     val position: Int,
-    val imageUrl: String? = null
-) { val image: ExerciseImage get() = imageUrl?.let(ExerciseImage::RemoteAsset) ?: ExerciseImage.LocalAsset(imageAssetKey) }
+    val imageUrl: String? = null,
+    val groupKey: String? = null,
+    val sequenceIndex: Int? = null,
+    val isTarget: Boolean? = null
+) {
+    val image: ExerciseImage get() = imageUrl?.let(ExerciseImage::RemoteAsset) ?: ExerciseImage.LocalAsset(imageAssetKey)
+    /** Letter tiles (WORD_BUILD) and text-only options have no picture. */
+    val hasImage: Boolean get() = imageUrl != null || imageAssetKey.isNotBlank()
+}
 
 data class ExerciseUiModel(
     val id: String,
@@ -36,7 +44,9 @@ data class ExerciseUiModel(
     val correctOptionId: String? = null,
     val audioUrl: String? = null,
     val activityType: String = "SINGLE_CHOICE",
-    val whiteboardConfig: WhiteboardExerciseConfigDto? = null
+    val whiteboardConfig: WhiteboardExerciseConfigDto? = null,
+    val gameConfig: GameExerciseConfigDto? = null,
+    val title: String? = null
 )
 
 data class WhiteboardStrokeUi(
@@ -59,7 +69,10 @@ data class AnswerUiModel(
     val selectedOptionLabel: String,
     val isCorrect: Boolean,
     val attemptNumber: Int,
-    val responseTimeMs: Long
+    val responseTimeMs: Long,
+    val secondaryValue: String? = null,
+    val progressDone: Int = 0,
+    val progressTotal: Int = 0
 )
 
 data class ExerciseUiState(
@@ -82,8 +95,14 @@ data class ExerciseUiState(
     val pendingOptionId: String? = null,
     val feedbackMessage: String? = null,
     val playInstructionRequest: Int = 0,
-    val errorMessage: String? = null
-    ,val whiteboard: WhiteboardUiState? = null
+    val errorMessage: String? = null,
+    val whiteboard: WhiteboardUiState? = null,
+    val progressDone: Int = 0,
+    val progressTotal: Int = 0,
+    /** MEMORY: matched cards, SORT: placed items, WORD_BUILD: used letter tiles. */
+    val solvedOptionIds: List<String> = emptyList(),
+    /** Every answer of the current exercise, newest last (specialist live log). */
+    val answerLog: List<AnswerUiModel> = emptyList()
 )
 
 internal fun String.toExerciseUiStatus(): ExerciseUiStatus = runCatching { ExerciseUiStatus.valueOf(this) }
@@ -91,21 +110,29 @@ internal fun String.toExerciseUiStatus(): ExerciseUiStatus = runCatching { Exerc
 
 internal fun ExerciseDto.toUi(correctOptionId: String? = null) = ExerciseUiModel(
     id = id, instructionText = instructionText, audioAssetKey = audioAssetKey,
-    options = options.sortedBy { it.position }.map { ExerciseOptionUiModel(it.id, it.label, it.imageAssetKey, it.position, it.imageUrl.toAbsoluteMediaUrl()) },
+    options = options.sortedBy { it.position }.map { ExerciseOptionUiModel(it.id, it.label, it.imageAssetKey, it.position, it.imageUrl.toAbsoluteMediaUrl(), it.groupKey, it.sequenceIndex, it.isTarget) },
     correctOptionId = correctOptionId, audioUrl = audioUrl.toAbsoluteMediaUrl(), activityType = activityType,
-    whiteboardConfig = whiteboardConfig?.copy(backgroundUrl = whiteboardConfig.backgroundUrl.toAbsoluteMediaUrl())
+    whiteboardConfig = whiteboardConfig?.copy(backgroundUrl = whiteboardConfig.backgroundUrl.toAbsoluteMediaUrl()),
+    gameConfig = gameConfig?.copy(imageUrl = gameConfig.imageUrl.toAbsoluteMediaUrl()),
+    title = title
 )
 
 internal fun AnswerExerciseResponse.toUi() = AnswerUiModel(
-    selectedOptionId, selectedOptionLabel, isCorrect, attemptNumber, responseTimeMs
+    selectedOptionId, selectedOptionLabel, isCorrect, attemptNumber, responseTimeMs, secondaryValue, progressDone, progressTotal
 )
+
+/** Appends an answer once, even when both the HTTP response and the WebSocket echo deliver it. */
+internal fun List<AnswerUiModel>.withAnswer(answer: AnswerUiModel): List<AnswerUiModel> =
+    if (any { it.attemptNumber == answer.attemptNumber }) this else (this + answer).sortedBy { it.attemptNumber }
 
 internal fun ExerciseStateResponse.toUiState(sessionId: String, childName: String, connection: SocketConnectionState) = ExerciseUiState(
     sessionId = sessionId, childName = childName, connectionState = connection,
     exercise = exercise?.toUi(correctOptionId), sessionExerciseId = sessionExerciseId,
     exerciseStatus = exerciseStatus.toExerciseUiStatus(), latestAnswer = latestAnswer?.toUi(),
     attemptCount = attemptCount, startedAt = startedAt, currentPosition = currentPosition,
-    totalExercises = totalExercises, hasNext = hasNext, planCompleted = planCompleted, whiteboard = whiteboardState?.toUi()
+    totalExercises = totalExercises, hasNext = hasNext, planCompleted = planCompleted, whiteboard = whiteboardState?.toUi(exercise?.whiteboardConfig),
+    progressDone = progressDone, progressTotal = progressTotal, solvedOptionIds = solvedOptionIds,
+    answerLog = listOfNotNull(latestAnswer?.toUi())
 )
 
 /** A new plan position must never retain result, timer or audio state from its predecessor. */
@@ -142,7 +169,11 @@ private fun String?.toAbsoluteMediaUrl(): String? = this?.let { url ->
     if (url.startsWith("http://") || url.startsWith("https://")) url else "${BuildConfig.API_BASE_URL.trimEnd('/')}$url"
 }
 
-internal fun WhiteboardStateSnapshotDto.toUi() = WhiteboardUiState(
+/** [config] seeds the selected colour/brush with the exercise defaults instead of black/medium. */
+internal fun WhiteboardStateSnapshotDto.toUi(config: WhiteboardExerciseConfigDto? = null, keep: WhiteboardUiState? = null) = WhiteboardUiState(
+    selectedTool = keep?.selectedTool ?: WhiteboardTool.PEN,
+    selectedColor = keep?.selectedColor ?: config?.defaultColor ?: WhiteboardColor.BLACK,
+    selectedBrushSize = keep?.selectedBrushSize ?: config?.defaultBrushSize ?: WhiteboardBrushSize.MEDIUM,
     childDrawingEnabled = childDrawingEnabled, boardRevision = boardRevision, clearRevision = clearRevision,
     strokes = strokes.sortedBy { it.sequenceNumber }.map { it.toUi() }
 )

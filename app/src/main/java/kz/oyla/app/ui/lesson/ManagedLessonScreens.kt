@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
@@ -47,7 +48,7 @@ fun SpecialistSelectionScreen(viewModel: ManagedLessonLaunchViewModel, onNext: (
     var search by remember { mutableStateOf("") }
     SelectionScaffold(title = "Кто проводит занятие?", subtitle = "Выберите специалиста этого центра", loading = state.isLoading, error = state.errorMessage, onBack = onBack) {
         TextField(value = search, onValueChange = { search = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Поиск специалиста") })
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().weight(1f, fill = false)) {
             items(state.specialists.filter { "${it.firstName} ${it.lastName.orEmpty()} ${it.specialization.orEmpty()}".contains(search, ignoreCase = true) }, key = { it.id }) { person -> SelectionCard("${person.firstName} ${person.lastName.orEmpty()}", person.specialization ?: "Специалист", person.id == state.specialistId) { viewModel.selectSpecialist(person.id) } }
         }
         ContinueButton(enabled = state.specialistId != null, onClick = onNext)
@@ -58,7 +59,7 @@ fun SpecialistSelectionScreen(viewModel: ManagedLessonLaunchViewModel, onNext: (
 fun ChildSelectionScreen(viewModel: ManagedLessonLaunchViewModel, onNext: () -> Unit, onBack: () -> Unit) {
     val state by viewModel.uiState.collectAsState(); LaunchedEffect(Unit) { viewModel.loadCatalog() }
     SelectionScaffold(title = "С кем занимаемся?", subtitle = "Выберите ребёнка этого центра", loading = state.isLoading, error = state.errorMessage, onBack = onBack) {
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().weight(1f, fill = false)) {
             items(state.children, key = { it.id }) { child -> SelectionCard("${child.firstName} ${child.lastName.orEmpty()}", child.birthDate ?: "Дата рождения не указана", child.id == state.childId) { viewModel.selectChild(child.id) } }
         }
         ContinueButton(enabled = state.childId != null, onClick = onNext)
@@ -73,7 +74,7 @@ fun ChildDeviceSelectionScreen(viewModel: ManagedLessonLaunchViewModel, onNext: 
             Text("Нет свободных детских планшетов. Проверьте подключение и доступ устройства.", color = OylaTextMuted, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
             OutlinedButton(onClick = viewModel::loadAvailableChildDevices, modifier = Modifier.fillMaxWidth()) { Text("Обновить") }
         }
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().weight(1f, fill = false)) {
             items(state.childDevices, key = { it.id }) { device -> SelectionCard(device.name, "Подключён · готов к занятию", device.id == state.childDeviceId) { viewModel.selectChildDevice(device.id) } }
         }
         ContinueButton(enabled = state.childDeviceId != null, onClick = onNext)
@@ -86,7 +87,7 @@ fun LessonTemplateSelectionScreen(viewModel: ManagedLessonLaunchViewModel, onNex
     var search by remember { mutableStateOf("") }
     SelectionScaffold(title = "Выберите занятие", subtitle = "Доступны шаблоны Oyla и вашего центра", loading = state.isLoading, error = state.errorMessage, onBack = onBack) {
         TextField(value = search, onValueChange = { search = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Поиск занятия") })
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().weight(1f, fill = false)) {
             items(state.templates.filter { "${it.name} ${it.description.orEmpty()}".contains(search, ignoreCase = true) }, key = { it.id }) { template ->
                 val source = if (template.ownership == "SYSTEM") "Oyla · " else "Центр · "
                 SelectionCard(template.name, "$source${template.exerciseCount} упражнений", template.id == state.lessonTemplateId) { viewModel.selectTemplate(template.id) }
@@ -130,7 +131,7 @@ fun ChildIdleScreen(viewModel: ChildAssignmentViewModel, onAssigned: (kz.oyla.ap
 }
 
 @Composable
-private fun SelectionScaffold(title: String, subtitle: String, loading: Boolean, error: String?, onBack: () -> Unit, content: @Composable () -> Unit) {
+private fun SelectionScaffold(title: String, subtitle: String, loading: Boolean, error: String?, onBack: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     Box(modifier = Modifier.fillMaxSize()) { OylaBackground(R.drawable.bg_specialist_home); Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.align(Alignment.Center).safeDrawingPadding().padding(28.dp).widthIn(max = 720.dp)) {
         OylaLogo(modifier = Modifier.fillMaxWidth(0.24f)); Text(title, color = OylaNavy, fontSize = 34.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center); Text(subtitle, color = OylaTextMuted, textAlign = TextAlign.Center); if (loading) CircularProgressIndicator(color = MaterialTheme.colorScheme.primary); error?.let { Text(it, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center) }; content(); OutlinedButton(onClick = onBack, enabled = !loading, modifier = Modifier.fillMaxWidth()) { Text("Назад") }
     } }

@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kz.oyla.app.data.remote.OylaWebSocketClient
 import kz.oyla.app.data.remote.SocketConnectionState
 import kz.oyla.app.data.remote.SocketEvent
@@ -47,6 +49,7 @@ class ChildSessionViewModel(
     private var socketJob: Job? = null
     private var timerJob: Job? = null
     private val answerSubmissionGuard = AnswerSubmissionGuard()
+    private val answerMutex = Mutex()
     private data class StrokeBuffer(val points: MutableList<WhiteboardPointDto> = mutableListOf(), var flushJob: Job? = null)
     private val strokeBuffers = mutableMapOf<String, StrokeBuffer>()
     private val localStrokeIds = mutableSetOf<String>()
@@ -126,24 +129,43 @@ class ChildSessionViewModel(
         }
     }
 
-    fun submitAnswer(optionId: String) {
+    fun submitAnswer(optionId: String) = submitGameAnswer(optionId, null)
+
+    /**
+     * Single-choice style exercises lock the board until the server answers. Multi-step games
+     * (pairs, sorting, word building, maze) judge each move locally for instant feedback, so
+     * their moves are queued and sent in order without blocking the child.
+     */
+    fun submitGameAnswer(optionId: String, secondaryValue: String?) {
         val state = _uiState.value
         val session = state.session ?: return
         val exercise = state.exercise
         val id = exercise.sessionExerciseId ?: return
-        if (exercise.exerciseStatus != ExerciseUiStatus.RUNNING || exercise.isAnswerPending || !answerSubmissionGuard.tryAcquire()) return
-        setExercise { it.copy(isAnswerPending = true, pendingOptionId = optionId, feedbackMessage = null, errorMessage = null) }
+        if (exercise.exerciseStatus != ExerciseUiStatus.RUNNING) return
+        val multiStep = exercise.exercise?.activityType in MULTI_STEP_TYPES
+        if (!multiStep && (exercise.isAnswerPending || !answerSubmissionGuard.tryAcquire())) return
+        if (!multiStep) setExercise { it.copy(isAnswerPending = true, pendingOptionId = optionId, feedbackMessage = null, errorMessage = null) }
         viewModelScope.launch {
-            when (val result = repository.submitAnswer(session, id, optionId, UUID.randomUUID().toString())) {
+            val result = answerMutex.withLock {
+                repository.submitAnswer(session, id, optionId, UUID.randomUUID().toString(), secondaryValue)
+            }
+            when (result) {
                 is ExerciseActionResult.Success -> {
                     val answer = result.value.toUi()
+                    val completed = result.value.exerciseStatus == "COMPLETED"
                     setExercise {
-                        val completed = result.value.exerciseStatus == "COMPLETED"
+                        if (it.sessionExerciseId != id) return@setExercise it
                         it.copy(
                             latestAnswer = answer, attemptCount = answer.attemptNumber,
                             exerciseStatus = result.value.exerciseStatus.toExerciseUiStatus(),
-                            isAnswerPending = !answer.isCorrect, pendingOptionId = if (answer.isCorrect) null else optionId,
+                            answerLog = it.answerLog.withAnswer(answer),
+                            progressDone = maxOf(it.progressDone, answer.progressDone),
+                            progressTotal = answer.progressTotal.takeIf { total -> total > 0 } ?: it.progressTotal,
+                            solvedOptionIds = if (multiStep && answer.isCorrect && optionId !in it.solvedOptionIds) it.solvedOptionIds + optionId else it.solvedOptionIds,
+                            isAnswerPending = !multiStep && !answer.isCorrect,
+                            pendingOptionId = if (!multiStep && !answer.isCorrect) optionId else null,
                             feedbackMessage = when {
+                                multiStep && !completed -> null
                                 !answer.isCorrect -> "Попробуй ещё раз"
                                 completed && it.currentPosition == it.totalExercises -> "Все задания выполнены!\nОтличная работа!"
                                 completed -> "Отлично! Жди следующее задание"
@@ -151,13 +173,15 @@ class ChildSessionViewModel(
                             }
                         )
                     }
-                    if (answer.isCorrect) timerJob?.cancel() else {
+                    if (completed) timerJob?.cancel()
+                    if (!multiStep && !answer.isCorrect) {
                         delay(850); answerSubmissionGuard.release()
                         setExercise { it.copy(isAnswerPending = false, pendingOptionId = null) }
                     }
                 }
                 is ExerciseActionResult.Failure -> setExercise {
-                    answerSubmissionGuard.release(); it.copy(isAnswerPending = false, pendingOptionId = null, errorMessage = result.message)
+                    if (!multiStep) answerSubmissionGuard.release()
+                    it.copy(isAnswerPending = false, pendingOptionId = null, errorMessage = result.message)
                 }
             }
         }
@@ -273,11 +297,12 @@ class ChildSessionViewModel(
             newTotal = event.totalExercises ?: old.totalExercises,
             newHasNext = event.hasNext ?: ((event.currentPosition ?: old.currentPosition) < (event.totalExercises ?: old.totalExercises)),
             newPlanCompleted = event.planCompleted ?: false,
-            newWhiteboard = event.whiteboardState?.toUi()
+            newWhiteboard = event.whiteboardState?.toUi(event.exercise?.whiteboardConfig ?: old.exercise?.whiteboardConfig)
         ) else old
         val answer = event.latestAnswer?.toUi() ?: if (event.selectedOptionId != null && event.isCorrect != null) {
             AnswerUiModel(event.selectedOptionId, event.selectedOptionLabel.orEmpty(), event.isCorrect,
-                event.attemptNumber ?: base.attemptCount + 1, event.responseTimeMs ?: 0)
+                event.attemptNumber ?: base.attemptCount + 1, event.responseTimeMs ?: 0,
+                event.secondaryValue, event.progressDone ?: 0, event.progressTotal ?: 0)
         } else base.latestAnswer
         val completedFeedback = if (event.type == "EXERCISE_COMPLETED") {
             if ((event.currentPosition ?: base.currentPosition) == (event.totalExercises ?: base.totalExercises)) {
@@ -295,7 +320,11 @@ class ChildSessionViewModel(
                 totalExercises = event.totalExercises ?: base.totalExercises,
                 hasNext = event.hasNext ?: base.hasNext,
                 planCompleted = event.planCompleted ?: base.planCompleted,
-                whiteboard = event.whiteboardState?.toUi() ?: base.whiteboard,
+                whiteboard = event.whiteboardState?.toUi(base.exercise?.whiteboardConfig, base.whiteboard) ?: base.whiteboard,
+                progressDone = event.progressDone?.let { done -> maxOf(done, if (reset) 0 else base.progressDone) } ?: base.progressDone,
+                progressTotal = event.progressTotal ?: base.progressTotal,
+                solvedOptionIds = event.solvedOptionIds?.let { ids -> (base.solvedOptionIds + ids).distinct() } ?: base.solvedOptionIds,
+                answerLog = answer?.let(base.answerLog::withAnswer) ?: base.answerLog,
                 feedbackMessage = completedFeedback,
                 playInstructionRequest = base.playInstructionRequest + if (requestAudio) 1 else 0
             )
@@ -348,6 +377,9 @@ class ChildSessionViewModel(
     private fun defaultWhiteboard(config: kz.oyla.app.data.remote.dto.WhiteboardExerciseConfigDto) = WhiteboardUiState(selectedColor = config.defaultColor, selectedBrushSize = config.defaultBrushSize, childDrawingEnabled = config.childDrawingInitiallyEnabled)
     override fun onCleared() { socketJob?.cancel(); timerJob?.cancel(); super.onCleared() }
 }
+
+/** Activity types whose child moves are judged locally and streamed to the server. */
+internal val MULTI_STEP_TYPES = setOf("MEMORY", "SORT", "WORD_BUILD", "MAZE", "POP", "SHADOW")
 
 class ChildSessionViewModelFactory(
     private val repository: SessionRepository, private val webSocketClient: OylaWebSocketClient, private val mediaToken: String? = null

@@ -32,6 +32,9 @@ android {
 
     buildTypes {
         debug {
+            // Installs next to the release build on the test tablet.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
             buildConfigField(
                 "String",
                 "API_BASE_URL",

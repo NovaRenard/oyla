@@ -290,7 +290,8 @@ fun OylaNavGraph(
                             popUpTo(OylaDestination.CHILD_IDLE.route) { inclusive = false }
                             launchSingleTop = true
                         }
-                    }
+                    },
+                    onOpenSettings = { navController.navigate(OylaDestination.CHILD_SETTINGS.route) }
                 )
             }
             composable(OylaDestination.SPECIALIST_EXERCISE.route) {

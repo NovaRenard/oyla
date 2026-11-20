@@ -26,3 +26,4 @@
 .cxx
 local.properties
 /.tools/
+/deploy/.env.local-test

@@ -136,9 +136,10 @@ class SessionRepository(
         session: SessionDetails,
         sessionExerciseId: String,
         optionId: String,
-        clientEventId: String
+        clientEventId: String,
+        secondaryValue: String? = null
     ): ExerciseActionResult<AnswerExerciseResponse> =
-        api.answerExercise(session.sessionId, session.token, AnswerExerciseRequest(sessionExerciseId, optionId, clientEventId))
+        api.answerExercise(session.sessionId, session.token, AnswerExerciseRequest(sessionExerciseId, optionId, clientEventId, secondaryValue))
             .toExerciseResult("Ответ не отправлен. Попробуйте ещё раз")
 
     suspend fun nextExercise(session: SessionDetails, currentSessionExerciseId: String): ExerciseActionResult<ExerciseStateResponse> =

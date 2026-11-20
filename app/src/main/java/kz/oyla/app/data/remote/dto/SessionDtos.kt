@@ -48,7 +48,13 @@ data class ExerciseOptionDto(
     val label: String,
     val imageAssetKey: String,
     val position: Int,
-    val imageUrl: String? = null
+    val imageUrl: String? = null,
+    /** SORT: "A" or "B". */
+    val groupKey: String? = null,
+    /** WORD_BUILD: 1..n for the letters of the word, null for distractors. */
+    val sequenceIndex: Int? = null,
+    /** POP: whether this balloon is one to pop. */
+    val isTarget: Boolean? = null
 )
 
 @Serializable
@@ -60,7 +66,22 @@ data class ExerciseDto(
     val title: String? = null,
     val activityType: String = "SINGLE_CHOICE",
     val audioUrl: String? = null,
-    val whiteboardConfig: WhiteboardExerciseConfigDto? = null
+    val whiteboardConfig: WhiteboardExerciseConfigDto? = null,
+    val gameConfig: GameExerciseConfigDto? = null
+)
+
+@Serializable data class GameExerciseConfigDto(
+    val groupLabels: List<String> = emptyList(),
+    val showTargetMs: Int? = null,
+    val mazeLayout: String? = null,
+    val imageAssetKey: String? = null,
+    val imageAssetId: String? = null,
+    val imageUrl: String? = null,
+    val targetOptionId: String? = null,
+    /** SYLLABLES: the word split into syllables. */
+    val syllables: List<String> = emptyList(),
+    /** COUNT: how many objects to draw. */
+    val countValue: Int? = null
 )
 
 @Serializable data class WhiteboardExerciseConfigDto(
@@ -71,7 +92,9 @@ data class ExerciseDto(
     val defaultColor: WhiteboardColor = WhiteboardColor.BLACK,
     val defaultBrushSize: WhiteboardBrushSize = WhiteboardBrushSize.MEDIUM,
     val allowEraser: Boolean = true,
-    val allowClear: Boolean = true
+    val allowClear: Boolean = true,
+    /** Dotted outline the child traces over: SUN, HOUSE, FISH, STAR, FLOWER, HEART (null = blank board). */
+    val traceTemplate: String? = null
 )
 @Serializable data class WhiteboardPointDto(val x: Float, val y: Float)
 @Serializable data class WhiteboardStrokeDto(
@@ -86,7 +109,7 @@ data class ExerciseDto(
 @Serializable data class CompleteWhiteboardExerciseRequest(val sessionExerciseId: String)
 
 @Serializable
-data class SpecialistExerciseDto(val exercise: ExerciseDto, val correctOptionId: String)
+data class SpecialistExerciseDto(val exercise: ExerciseDto, val correctOptionId: String? = null)
 
 @Serializable
 data class ShowExerciseRequest(val exerciseId: String)
@@ -104,7 +127,9 @@ data class StartExerciseResponse(val sessionExerciseId: String, val status: Stri
 data class AnswerExerciseRequest(
     val sessionExerciseId: String,
     val selectedOptionId: String,
-    val clientEventId: String
+    val clientEventId: String,
+    /** MEMORY: second card id; SORT: "A"/"B". */
+    val secondaryValue: String? = null
 )
 
 @Serializable
@@ -115,7 +140,10 @@ data class AnswerExerciseResponse(
     val isCorrect: Boolean,
     val attemptNumber: Int,
     val responseTimeMs: Long,
-    val exerciseStatus: String
+    val exerciseStatus: String,
+    val secondaryValue: String? = null,
+    val progressDone: Int = 0,
+    val progressTotal: Int = 0
 )
 
 @Serializable
@@ -135,7 +163,10 @@ data class ExerciseStateResponse(
     val hasPrevious: Boolean = false,
     val hasNext: Boolean = true,
     val planCompleted: Boolean = false,
-    val whiteboardState: WhiteboardStateSnapshotDto? = null
+    val whiteboardState: WhiteboardStateSnapshotDto? = null,
+    val progressDone: Int = 0,
+    val progressTotal: Int = 0,
+    val solvedOptionIds: List<String> = emptyList()
 )
 
 @Serializable
@@ -206,7 +237,11 @@ data class SessionWebSocketEvent(
     val stroke: WhiteboardStrokeDto? = null,
     val childDrawingEnabled: Boolean? = null,
     val boardRevision: Int? = null,
-    val clearRevision: Int? = null
+    val clearRevision: Int? = null,
+    val secondaryValue: String? = null,
+    val progressDone: Int? = null,
+    val progressTotal: Int? = null,
+    val solvedOptionIds: List<String>? = null
 )
 
 @Serializable data class WhiteboardClientEvent(

@@ -143,6 +143,46 @@ class SpecialistSessionViewModel(
         }
     }
 
+    /**
+     * One tap for the specialist: the server still needs "show" then "start", but they are
+     * sent back to back so the child goes straight into the task.
+     */
+    fun launchExercise() {
+        val state = _uiState.value
+        val session = state.session ?: return
+        if (state.exercise.isCommandLoading) return
+        setExercise { it.copy(isCommandLoading = true, errorMessage = null) }
+        viewModelScope.launch {
+            launchCurrent(session)
+            setExercise { it.copy(isCommandLoading = false) }
+        }
+    }
+
+    private suspend fun launchCurrent(session: SessionDetails) {
+        var current = _uiState.value.exercise
+        if (current.exerciseStatus == ExerciseUiStatus.PENDING) {
+            val exercise = current.exercise ?: return
+            when (val shown = repository.showExercise(session, exercise.id)) {
+                is ExerciseActionResult.Success -> setExercise {
+                    it.copy(sessionExerciseId = shown.value.sessionExerciseId, exerciseStatus = shown.value.status.toExerciseUiStatus())
+                }
+                is ExerciseActionResult.Failure -> { setExercise { it.copy(errorMessage = shown.message.ifBlank { "Не удалось показать задание" }) }; return }
+            }
+            current = _uiState.value.exercise
+        }
+        if (current.exerciseStatus == ExerciseUiStatus.SHOWN) {
+            val id = current.sessionExerciseId ?: return
+            when (val started = repository.startExercise(session, id)) {
+                is ExerciseActionResult.Success -> {
+                    setExercise { it.copy(exerciseStatus = started.value.status.toExerciseUiStatus(), startedAt = started.value.startedAt) }
+                    startElapsedTicker(started.value.startedAt)
+                }
+                is ExerciseActionResult.Failure -> setExercise { it.copy(errorMessage = started.message.ifBlank { "Не удалось начать задание" }) }
+            }
+        }
+    }
+
+    /** "Next" opens the following task and starts it right away. */
     fun nextExercise() {
         val state = _uiState.value
         val session = state.session ?: return
@@ -151,7 +191,7 @@ class SpecialistSessionViewModel(
         setExercise { it.copy(isCommandLoading = true, errorMessage = null) }
         viewModelScope.launch {
             when (val result = repository.nextExercise(session, id)) {
-                is ExerciseActionResult.Success -> applyStateSnapshot(result.value)
+                is ExerciseActionResult.Success -> { applyStateSnapshot(result.value); launchCurrent(session) }
                 is ExerciseActionResult.Failure -> setExercise { it.copy(errorMessage = result.message.ifBlank { "Не удалось открыть следующее задание" }) }
             }
             nextExerciseGuard.release()
@@ -305,11 +345,12 @@ class SpecialistSessionViewModel(
             newTotal = event.totalExercises ?: old.totalExercises,
             newHasNext = event.hasNext ?: ((event.currentPosition ?: old.currentPosition) < (event.totalExercises ?: old.totalExercises)),
             newPlanCompleted = event.planCompleted ?: false,
-            newWhiteboard = event.whiteboardState?.toUi()
+            newWhiteboard = event.whiteboardState?.toUi(event.exercise?.whiteboardConfig ?: old.exercise?.whiteboardConfig)
         ) else old
         val answer = event.latestAnswer?.toUi() ?: if (event.selectedOptionId != null && event.isCorrect != null) {
             AnswerUiModel(event.selectedOptionId, event.selectedOptionLabel.orEmpty(), event.isCorrect,
-                event.attemptNumber ?: base.attemptCount + 1, event.responseTimeMs ?: 0)
+                event.attemptNumber ?: base.attemptCount + 1, event.responseTimeMs ?: 0,
+                event.secondaryValue, event.progressDone ?: 0, event.progressTotal ?: 0)
         } else base.latestAnswer
         setExercise {
             base.copy(
@@ -322,7 +363,16 @@ class SpecialistSessionViewModel(
                 totalExercises = event.totalExercises ?: base.totalExercises,
                 hasNext = event.hasNext ?: base.hasNext,
                 planCompleted = event.planCompleted ?: base.planCompleted,
-                whiteboard = event.whiteboardState?.toUi() ?: base.whiteboard
+                whiteboard = event.whiteboardState?.toUi(base.exercise?.whiteboardConfig, base.whiteboard) ?: base.whiteboard,
+                progressDone = event.progressDone?.let { done -> maxOf(done, if (reset) 0 else base.progressDone) } ?: base.progressDone,
+                progressTotal = event.progressTotal ?: base.progressTotal,
+                solvedOptionIds = when {
+                    event.solvedOptionIds != null -> (base.solvedOptionIds + event.solvedOptionIds).distinct()
+                    event.type == "ANSWER_RECEIVED" && event.isCorrect == true && event.selectedOptionId != null &&
+                        base.exercise?.activityType in MULTI_STEP_TYPES -> (base.solvedOptionIds + event.selectedOptionId).distinct()
+                    else -> base.solvedOptionIds
+                },
+                answerLog = if (event.type == "ANSWER_RECEIVED" && answer != null) base.answerLog.withAnswer(answer) else base.answerLog
             )
         }
         event.startedAt?.let(::startElapsedTicker)

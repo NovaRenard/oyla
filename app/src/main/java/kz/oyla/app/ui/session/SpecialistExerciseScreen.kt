@@ -59,6 +59,11 @@ import kz.oyla.app.ui.components.OylaPrimaryButton
 import kz.oyla.app.ui.theme.OylaBlue
 import kz.oyla.app.ui.theme.OylaNavy
 import kz.oyla.app.ui.theme.OylaTextMuted
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import kz.oyla.app.ui.play.ExerciseStage
 
 @Composable
 fun SpecialistExerciseScreen(
@@ -77,57 +82,60 @@ fun SpecialistExerciseScreen(
     }
     LaunchedEffect(state.session?.sessionId) { if (state.session != null) viewModel.loadCurrentExercise() }
     BackHandler(enabled = true) { }
+    val childConnected = state.session?.childConnected == true
 
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-        val screenWidth = maxWidth
-        val screenHeight = maxHeight
-        OylaBackground(R.drawable.bg_specialist_home)
-        Column(
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = screenWidth * .025f, vertical = screenHeight * .025f)
+    Column(Modifier.fillMaxSize().background(PultBackground).safeDrawingPadding()) {
+        PultTopBar(
+            childName = state.session?.childName ?: "—", exercise = exercise, childConnected = childConnected,
+            socketState = state.socketState, onSettings = { showConnectionSettings = true }
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                OylaLogo(Modifier.width(screenWidth * .12f))
-                Spacer(Modifier.weight(1f))
-                Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = Color.White.copy(.93f))) {
-                    IconButton(onClick = { showConnectionSettings = true }) {
-                        Icon(Icons.Outlined.Settings, "Настройки подключения", tint = OylaNavy)
-                    }
+            Column(Modifier.weight(.6f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Задание ${exercise.currentPosition} из ${exercise.totalExercises}",
+                        color = PultMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    StatusChip(exercise.exerciseStatus)
+                    Spacer(Modifier.weight(1f))
+                    Text("Экран ребёнка", color = PultMuted, fontSize = 13.sp)
                 }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = Color.White.copy(.94f))) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
-                        Icon(Icons.Outlined.PersonOutline, null, tint = OylaBlue, modifier = Modifier.size(27.dp))
-                        Spacer(Modifier.width(10.dp))
-                        Text("Ребёнок: ${state.session?.childName ?: "—"}", color = OylaNavy, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
-                    }
-                }
-                Spacer(Modifier.width(18.dp))
-                PlanProgress(exercise)
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(18.dp), modifier = Modifier.fillMaxWidth().weight(1f)) {
-                Card(
-                    shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(containerColor = Color.White.copy(.95f)),
-                    modifier = Modifier.weight(.65f).fillMaxHeight()
-                ) {
-                    Column(modifier = Modifier.fillMaxSize().padding(22.dp)) {
-                        Text("Задание ${exercise.currentPosition} из ${exercise.totalExercises}", color = OylaNavy, fontSize = 30.sp, fontWeight = FontWeight.Bold)
-                        Text(exercise.exercise?.instructionText ?: "Загружаем задание…", color = OylaNavy, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp, bottom = 16.dp))
-                        ActivityRenderer(
-                            exercise = exercise, isSpecialist = true, mediaToken = viewModel.mediaToken, selectedAnswer = exercise.latestAnswer,
-                            onSelectTool = viewModel::selectWhiteboardTool, onSelectColor = viewModel::selectWhiteboardColor, onSelectBrush = viewModel::selectWhiteboardBrush,
-                            onStrokeStart = viewModel::beginWhiteboardStroke, onStrokePoint = viewModel::appendWhiteboardPoint, onStrokeEnd = viewModel::endWhiteboardStroke,
-                            onUndo = viewModel::whiteboardUndo, onClear = viewModel::whiteboardClear, onChildPermission = viewModel::setChildDrawingEnabled
-                        )
-                    }
-                }
-                ResultsPanel(
-                    exercise = exercise, childConnected = state.session?.childConnected == true, socketState = state.socketState,
-                    onShow = viewModel::showExercise, onStart = viewModel::startExercise, onCompleteExercise = viewModel::completeWhiteboardExercise, onNext = viewModel::nextExercise,
-                    onSummary = onOpenSummary, onComplete = { showConfirmation = true }, modifier = Modifier.weight(.35f).fillMaxHeight()
+                Text(
+                    exercise.exercise?.title ?: exercise.exercise?.instructionText ?: "Загружаем задание…",
+                    color = PultInk, fontSize = 19.sp, fontWeight = FontWeight.Bold, maxLines = 1
                 )
+                Box(
+                    Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(18.dp)).background(Color.White),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (exercise.exercise?.activityType == "WHITEBOARD") {
+                        Box(Modifier.fillMaxSize().padding(10.dp)) {
+                            ActivityRenderer(
+                                exercise = exercise, isSpecialist = true, mediaToken = viewModel.mediaToken, selectedAnswer = exercise.latestAnswer,
+                                onSelectTool = viewModel::selectWhiteboardTool, onSelectColor = viewModel::selectWhiteboardColor, onSelectBrush = viewModel::selectWhiteboardBrush,
+                                onStrokeStart = viewModel::beginWhiteboardStroke, onStrokePoint = viewModel::appendWhiteboardPoint, onStrokeEnd = viewModel::endWhiteboardStroke,
+                                onUndo = viewModel::whiteboardUndo, onClear = viewModel::whiteboardClear, onChildPermission = viewModel::setChildDrawingEnabled
+                            )
+                        }
+                    } else if (exercise.exercise != null) {
+                        Box(Modifier.fillMaxWidth().aspectRatio(16f / 10f)) {
+                            ExerciseStage(state = exercise, specialistView = true, mediaToken = viewModel.mediaToken)
+                        }
+                    } else {
+                        Text("Задание появится здесь", color = PultMuted, fontSize = 16.sp)
+                    }
+                }
             }
+            LivePanel(
+                exercise = exercise, childConnected = childConnected, socketState = state.socketState,
+                onShow = viewModel::launchExercise, onStart = viewModel::launchExercise, onCompleteExercise = viewModel::completeWhiteboardExercise,
+                onNext = viewModel::nextExercise, onSummary = onOpenSummary, onComplete = { showConfirmation = true },
+                modifier = Modifier.weight(.4f).fillMaxHeight()
+            )
         }
     }
     if (showConfirmation) AlertDialog(
@@ -141,7 +149,7 @@ fun SpecialistExerciseScreen(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 ConnectionStatusLine("Сервер", serverLabel(state.socketState), serverColor(state.socketState))
-                ConnectionStatusLine("Ребёнок", if (state.session?.childConnected == true) "подключён" else "ожидание подключения", if (state.session?.childConnected == true) Color(0xFF31B96A) else OylaTextMuted)
+                ConnectionStatusLine("Ребёнок", if (childConnected) "подключён" else "ожидание подключения", if (childConnected) Color(0xFF31B96A) else OylaTextMuted)
             }
         },
         confirmButton = { Button(onClick = { showConnectionSettings = false }) { Text("Закрыть") } },
@@ -154,85 +162,158 @@ fun SpecialistExerciseScreen(
     )
 }
 
+private val PultBackground = Color(0xFFF3F5FA)
+private val PultInk = Color(0xFF18213A)
+private val PultMuted = Color(0xFF5B6680)
+private val PultBlue = Color(0xFF1F4FD1)
+private val PultGreen = Color(0xFF2EAD5B)
+private val PultOrange = Color(0xFFF08C00)
+
 @Composable
-private fun PlanProgress(exercise: ExerciseUiState) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        (1..exercise.totalExercises).forEach { position ->
-            val completed = position < exercise.currentPosition ||
-                (position == exercise.currentPosition && exercise.exerciseStatus == ExerciseUiStatus.COMPLETED)
-            val current = position == exercise.currentPosition && !completed
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = when { completed -> Color(0xFF36A969); current -> OylaBlue; else -> Color.White.copy(.82f) }),
-                modifier = Modifier.size(34.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                    if (completed) Icon(Icons.Outlined.Check, null, tint = Color.White, modifier = Modifier.size(19.dp))
-                    else Text(position.toString(), color = if (current) Color.White else OylaTextMuted, fontWeight = FontWeight.Bold)
+private fun PultTopBar(childName: String, exercise: ExerciseUiState, childConnected: Boolean, socketState: SocketConnectionState, onSettings: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 16.dp, vertical = 10.dp)
+    ) {
+        Box(Modifier.size(40.dp).clip(CircleShape).background(Color(0xFFFFB648)), contentAlignment = Alignment.Center) {
+            Text(childName.trim().firstOrNull()?.uppercase() ?: "?", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+        }
+        Spacer(Modifier.width(10.dp))
+        Column {
+            Text(childName, color = PultInk, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(8.dp).clip(CircleShape).background(if (childConnected && socketState == SocketConnectionState.CONNECTED) PultGreen else PultOrange))
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    (if (childConnected) "Ребёнок на связи" else "Ждём ребёнка") + " · " + formatTime(exercise.elapsedMillis),
+                    color = PultMuted, fontSize = 13.sp
+                )
+            }
+        }
+        Spacer(Modifier.width(24.dp))
+        Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            (1..exercise.totalExercises.coerceAtLeast(1)).forEach { position ->
+                val done = position < exercise.currentPosition || (position == exercise.currentPosition && exercise.exerciseStatus == ExerciseUiStatus.COMPLETED)
+                val current = position == exercise.currentPosition && !done
+                Box(Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp)).background(when { done -> PultGreen; current -> PultBlue; else -> Color(0xFFD5DBE8) }))
+            }
+        }
+        Spacer(Modifier.width(16.dp))
+        IconButton(onClick = onSettings) { Icon(Icons.Outlined.Settings, "Настройки подключения", tint = PultInk) }
+    }
+}
+
+@Composable
+private fun StatusChip(status: ExerciseUiStatus) {
+    val (label, bg, fg) = when (status) {
+        ExerciseUiStatus.PENDING -> Triple("Не показано", Color(0xFFEEF1F6), PultMuted)
+        ExerciseUiStatus.SHOWN -> Triple("Ребёнок видит", Color(0xFFE6EDFF), PultBlue)
+        ExerciseUiStatus.RUNNING -> Triple("Идёт", Color(0xFFE8F6EE), Color(0xFF1E7A43))
+        ExerciseUiStatus.COMPLETED -> Triple("Выполнено", Color(0xFFE8F6EE), Color(0xFF1E7A43))
+    }
+    Text(label, color = fg, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+        modifier = Modifier.clip(RoundedCornerShape(50)).background(bg).padding(horizontal = 10.dp, vertical = 3.dp))
+}
+
+@Composable
+private fun LivePanel(
+    exercise: ExerciseUiState, childConnected: Boolean, socketState: SocketConnectionState,
+    onShow: () -> Unit, onStart: () -> Unit, onCompleteExercise: () -> Unit, onNext: () -> Unit, onSummary: () -> Unit,
+    onComplete: () -> Unit, modifier: Modifier
+) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(
+            Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(18.dp)).background(Color.White).padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("Что делает ребёнок", color = PultMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            if (exercise.progressTotal > 1) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFFEEF1F6))) {
+                        Box(Modifier.fillMaxHeight().fillMaxWidth((exercise.progressDone.toFloat() / exercise.progressTotal).coerceIn(0f, 1f)).clip(RoundedCornerShape(4.dp)).background(PultGreen))
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text("${exercise.progressDone} из ${exercise.progressTotal}", color = PultInk, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
             }
+            val log = exercise.answerLog.asReversed()
+            if (log.isEmpty()) {
+                Text(
+                    when (exercise.exerciseStatus) {
+                        ExerciseUiStatus.PENDING, ExerciseUiStatus.SHOWN -> "Нажмите «Начать задание»"
+                        ExerciseUiStatus.RUNNING -> if (exercise.exercise?.activityType == "WHITEBOARD") "Ребёнок рисует" else "Ждём действий ребёнка…"
+                        ExerciseUiStatus.COMPLETED -> "Задание выполнено"
+                    },
+                    color = PultMuted, fontSize = 14.sp
+                )
+            }
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                log.forEach { answer ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(24.dp).clip(CircleShape).background(if (answer.isCorrect) PultGreen else PultOrange), contentAlignment = Alignment.Center) {
+                            Text(if (answer.isCorrect) "✓" else "×", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Text(answerText(answer, exercise.exercise), color = PultInk, fontSize = 14.sp, modifier = Modifier.weight(1f), maxLines = 2)
+                        Text(formatSeconds(answer.responseTimeMs), color = PultMuted, fontSize = 12.sp)
+                    }
+                }
+            }
+            exercise.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
+        }
+        val primary = Modifier.fillMaxWidth().height(52.dp)
+        val enabledCommands = !exercise.isCommandLoading
+        when (exercise.exerciseStatus) {
+            // Show + start are one action for the specialist.
+            ExerciseUiStatus.PENDING, ExerciseUiStatus.SHOWN -> PultButton("Начать задание", Icons.Outlined.PlayArrow, onStart, childConnected && socketState == SocketConnectionState.CONNECTED && enabledCommands, primary)
+            ExerciseUiStatus.RUNNING -> if (exercise.exercise?.activityType == "WHITEBOARD") {
+                PultButton("Завершить рисунок", Icons.Outlined.CheckCircle, onCompleteExercise, enabledCommands, primary)
+            } else {
+                PultButton("Ребёнок выполняет…", Icons.Outlined.PlayArrow, {}, false, primary)
+            }
+            ExerciseUiStatus.COMPLETED -> if (exercise.currentPosition < exercise.totalExercises) {
+                PultButton("Следующее задание", Icons.Outlined.NavigateNext, onNext, exercise.canMoveToNext(), primary)
+            } else {
+                PultButton("Посмотреть итог", Icons.Outlined.CheckCircle, onSummary, exercise.canOpenSummary(), primary)
+            }
+        }
+        Button(
+            onClick = onComplete,
+            colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color(0xFFB42318)),
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.fillMaxWidth().height(44.dp)
+        ) {
+            Icon(Icons.Outlined.StopCircle, null); Spacer(Modifier.width(8.dp)); Text("Завершить занятие", fontWeight = FontWeight.Bold)
         }
     }
 }
 
 @Composable
-private fun ResultsPanel(
-    exercise: ExerciseUiState, childConnected: Boolean, socketState: SocketConnectionState,
-    onShow: () -> Unit, onStart: () -> Unit, onCompleteExercise: () -> Unit, onNext: () -> Unit, onSummary: () -> Unit,
-    onComplete: () -> Unit, modifier: Modifier
-) {
-    Card(shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(containerColor = Color.White.copy(.96f)), modifier = modifier) {
-        Column(modifier = Modifier.fillMaxSize().padding(20.dp)) {
-            val commandButtonModifier = Modifier
-                .widthIn(max = 300.dp)
-                .fillMaxWidth()
-                .align(Alignment.CenterHorizontally)
-            Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                Text("Результаты в реальном времени", color = OylaNavy, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(12.dp))
-                ResultLine("Выбор ребёнка", exercise.latestAnswer?.selectedOptionLabel ?: "—")
-                ResultLine("Правильность", exercise.latestAnswer?.let { if (it.isCorrect) "Правильно" else "Неправильно" } ?: "—")
-                ResultLine("Попытка", exercise.attemptCount.toString())
-                ResultLine("Время", formatTime(if (exercise.exerciseStatus == ExerciseUiStatus.COMPLETED) exercise.latestAnswer?.responseTimeMs ?: 0 else exercise.elapsedMillis))
-                Spacer(Modifier.height(12.dp))
-                Text(if (childConnected) "● Ребёнок подключён" else "○ Ожидаем ребёнка", color = if (childConnected) Color(0xFF31B96A) else OylaTextMuted, fontSize = 13.sp)
-                exercise.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp)) }
-            }
-            Spacer(Modifier.height(12.dp))
-            when (exercise.exerciseStatus) {
-                ExerciseUiStatus.PENDING -> OylaPrimaryButton("Показать ребёнку", Icons.Outlined.Visibility, "Показать ребёнку", onShow,
-                    enabled = childConnected && !exercise.isCommandLoading, textSize = 16.sp, minHeight = 54.dp, modifier = commandButtonModifier)
-                ExerciseUiStatus.SHOWN -> {
-                    OylaPrimaryButton("Показано ребёнку", Icons.Outlined.Visibility, "Показано ребёнку", {}, enabled = false, textSize = 16.sp, minHeight = 50.dp, modifier = commandButtonModifier)
-                    Spacer(Modifier.height(8.dp))
-                    OylaPrimaryButton("Начать", Icons.Outlined.PlayArrow, "Начать", onStart, enabled = socketState == SocketConnectionState.CONNECTED && !exercise.isCommandLoading, textSize = 16.sp, minHeight = 54.dp, modifier = commandButtonModifier)
-                }
-                ExerciseUiStatus.RUNNING -> if (exercise.exercise?.activityType == "WHITEBOARD") OylaPrimaryButton("Завершить упражнение", Icons.Outlined.CheckCircle, "Завершить упражнение", onCompleteExercise, enabled = !exercise.isCommandLoading, textSize = 16.sp, minHeight = 54.dp, modifier = Modifier.fillMaxWidth()) else OylaPrimaryButton("Задание выполняется", Icons.Outlined.PlayArrow, "Задание выполняется", {}, enabled = false, textSize = 16.sp, minHeight = 54.dp, modifier = Modifier.fillMaxWidth())
-                ExerciseUiStatus.COMPLETED -> if (exercise.currentPosition < exercise.totalExercises) {
-                    OylaPrimaryButton("Следующее задание", Icons.Outlined.NavigateNext, "Следующее задание", onNext, enabled = exercise.canMoveToNext(), textSize = 16.sp, minHeight = 54.dp, modifier = Modifier.fillMaxWidth())
-                } else {
-                    OylaPrimaryButton("Посмотреть итог", Icons.Outlined.CheckCircle, "Посмотреть итог", onSummary, enabled = exercise.canOpenSummary(), textSize = 16.sp, minHeight = 54.dp, modifier = Modifier.fillMaxWidth())
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            Button(onClick = onComplete, colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFF04E35)), modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Outlined.StopCircle, null); Spacer(Modifier.width(8.dp)); Text("Завершить занятие", fontWeight = FontWeight.Bold)
-            }
-        }
+private fun PultButton(text: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit, enabled: Boolean, modifier: Modifier) {
+    Button(
+        onClick = onClick, enabled = enabled, shape = RoundedCornerShape(14.dp), modifier = modifier,
+        colors = ButtonDefaults.buttonColors(containerColor = PultBlue, contentColor = Color.White, disabledContainerColor = Color(0xFFD5DBE8), disabledContentColor = PultMuted)
+    ) {
+        Icon(icon, null); Spacer(Modifier.width(8.dp)); Text(text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
     }
 }
+
+private fun answerText(answer: AnswerUiModel, exercise: ExerciseUiModel?): String {
+    var label = answer.selectedOptionLabel.ifBlank { answer.selectedOptionId }
+    if (exercise?.activityType == "MEMORY" && !answer.isCorrect) {
+        val second = exercise.options.firstOrNull { it.id == answer.secondaryValue }?.label
+        if (second != null) label = "$label + $second"
+    }
+    return if (answer.isCorrect) "$label — верно" else "$label — мимо"
+}
+
+private fun formatSeconds(millis: Long): String = "%.1f с".format(millis / 1000f)
 
 @Composable
 private fun ConnectionStatusLine(label: String, value: String, color: Color) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         Text(label, color = OylaTextMuted, fontSize = 16.sp); Spacer(Modifier.weight(1f)); Text("●  $value", color = color, fontSize = 16.sp, fontWeight = FontWeight.Bold)
     }
-}
-@Composable private fun ResultLine(label: String, value: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-        Icon(Icons.Outlined.CheckCircle, null, tint = OylaBlue, modifier = Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("$label:", color = OylaTextMuted, fontSize = 16.sp); Spacer(Modifier.weight(1f)); Text(value, color = OylaNavy, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-    }
-    Divider(color = Color(0xFFE7ECF5))
 }
 
 internal fun formatTime(millis: Long): String { val seconds = (millis / 1_000).coerceAtLeast(0); return "%02d:%02d".format(seconds / 60, seconds % 60) }

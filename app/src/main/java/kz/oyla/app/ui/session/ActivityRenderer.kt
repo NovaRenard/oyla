@@ -5,6 +5,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -94,7 +98,10 @@ private fun WhiteboardRenderer(
         WhiteboardToolbar(board, config.availableColors, config.allowEraser, isSpecialist, config.allowClear, canDraw,
             onSelectTool, onSelectColor, onSelectBrush, onUndo, onClear, onChildPermission)
         if (!isSpecialist && !board.childDrawingEnabled) Text("Смотрите на доску", color = Color(0xFF59677B))
-        Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color.White), modifier = Modifier.fillMaxSize()) {
+        // Same proportions as the child's drawing area (1150×800 artboard units) so strokes,
+        // stored in normalised coordinates, look identical on both tablets.
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFDF7)), modifier = Modifier.aspectRatio(1150f / 800f)) {
             Box(modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(20.dp)).background(Color.White)) {
                 val context = LocalContext.current
                 config.backgroundUrl?.let { url ->
@@ -102,9 +109,10 @@ private fun WhiteboardRenderer(
                     AsyncImage(model = request, contentDescription = "Фон доски", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize(), onError = { backgroundFailed = true })
                 }
                 if (isSpecialist && backgroundFailed) Text("Фон недоступен — используется пустая доска", color = Color(0xFF8A4B00), modifier = Modifier.align(Alignment.TopCenter).padding(8.dp))
+                TraceTemplateLayer(config.traceTemplate, Modifier.fillMaxSize())
                 var currentStrokeId by remember(board.boardRevision, state.sessionExerciseId) { mutableStateOf<String?>(null) }
                 Canvas(
-                    modifier = Modifier.fillMaxSize().pointerInput(canDraw, board.selectedTool, board.selectedColor, board.selectedBrushSize) {
+                    modifier = Modifier.fillMaxSize().graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }.pointerInput(canDraw, board.selectedTool, board.selectedColor, board.selectedBrushSize) {
                         if (canDraw) detectDragGestures(
                             onDragStart = { offset -> currentStrokeId = onStrokeStart(normalizeWhiteboardPoint(offset.x, offset.y, size.width.toFloat(), size.height.toFloat())) },
                             onDrag = { change, _ -> currentStrokeId?.let { onStrokePoint(it, normalizeWhiteboardPoint(change.position.x, change.position.y, size.width.toFloat(), size.height.toFloat())) }; change.consume() },
@@ -123,6 +131,7 @@ private fun WhiteboardRenderer(
                 }
             }
         }
+        }
     }
 }
 
@@ -132,7 +141,7 @@ private fun WhiteboardToolbar(
     allowClear: Boolean, canDraw: Boolean, onSelectTool: (WhiteboardTool) -> Unit, onSelectColor: (WhiteboardColor) -> Unit,
     onSelectBrush: (WhiteboardBrushSize) -> Unit, onUndo: () -> Unit, onClear: () -> Unit, onChildPermission: (Boolean) -> Unit
 ) {
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 42.dp)) {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 42.dp).horizontalScroll(rememberScrollState())) {
         ToolButton("Перо", board.selectedTool == WhiteboardTool.PEN, canDraw) { onSelectTool(WhiteboardTool.PEN) }
         if (allowEraser) ToolButton("Ластик", board.selectedTool == WhiteboardTool.ERASER, canDraw) { onSelectTool(WhiteboardTool.ERASER) }
         colors.forEach { color -> Button(onClick = { onSelectColor(color) }, enabled = canDraw, colors = ButtonDefaults.buttonColors(containerColor = color.toComposeColor()), modifier = Modifier.size(34.dp)) {} }
@@ -144,8 +153,8 @@ private fun WhiteboardToolbar(
 }
 
 @Composable private fun ToolButton(label: String, selected: Boolean, enabled: Boolean, onClick: () -> Unit) = Button(onClick = onClick, enabled = enabled, colors = ButtonDefaults.buttonColors(containerColor = if (selected) Color(0xFF2B73C9) else Color(0xFFE7EEF8), contentColor = if (selected) Color.White else Color(0xFF193758)), modifier = Modifier.heightIn(min = 34.dp)) { Text(label) }
-private fun WhiteboardColor.toComposeColor() = when (this) { WhiteboardColor.BLACK -> Color.Black; WhiteboardColor.BLUE -> Color(0xFF246BCE); WhiteboardColor.GREEN -> Color(0xFF2F9C57); WhiteboardColor.RED -> Color(0xFFD64242); WhiteboardColor.ORANGE -> Color(0xFFF28A2A); WhiteboardColor.PURPLE -> Color(0xFF824CB3) }
-private fun WhiteboardBrushSize.normalizedWidth() = when (this) { WhiteboardBrushSize.THIN -> .006f; WhiteboardBrushSize.MEDIUM -> .012f; WhiteboardBrushSize.THICK -> .022f }
+internal fun WhiteboardColor.toComposeColor() = when (this) { WhiteboardColor.BLACK -> Color.Black; WhiteboardColor.BLUE -> Color(0xFF246BCE); WhiteboardColor.GREEN -> Color(0xFF2F9C57); WhiteboardColor.RED -> Color(0xFFD64242); WhiteboardColor.ORANGE -> Color(0xFFF28A2A); WhiteboardColor.PURPLE -> Color(0xFF824CB3) }
+internal fun WhiteboardBrushSize.normalizedWidth() = when (this) { WhiteboardBrushSize.THIN -> .006f; WhiteboardBrushSize.MEDIUM -> .012f; WhiteboardBrushSize.THICK -> .022f }
 
 /** Converts a Compose pointer to the stable canvas coordinate system shared by both tablets. */
 internal fun normalizeWhiteboardPoint(x: Float, y: Float, width: Float, height: Float): WhiteboardPointDto =

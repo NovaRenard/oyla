@@ -3,18 +3,73 @@ package kz.oyla.app.ui.session
 import androidx.annotation.DrawableRes
 import kz.oyla.app.R
 
+/** Pictures shipped in the APK; server content refers to them by key. */
+private val localExerciseDrawables: Map<String, Int> = mapOf(
+    "exercise_rocket" to R.drawable.exercise_rocket,
+    "exercise_cat" to R.drawable.exercise_cat,
+    "exercise_house" to R.drawable.exercise_house,
+    "exercise_fox" to R.drawable.exercise_fox,
+    "exercise_ball" to R.drawable.exercise_ball,
+    "exercise_duck" to R.drawable.exercise_duck,
+    "exercise_apple" to R.drawable.exercise_apple,
+    "exercise_dog" to R.drawable.exercise_dog,
+    "exercise_lamp" to R.drawable.exercise_lamp,
+    "exercise_elephant" to R.drawable.exercise_elephant,
+    "exercise_fish" to R.drawable.exercise_fish,
+    "exercise_pear" to R.drawable.exercise_pear,
+    "exercise_banana" to R.drawable.exercise_banana,
+    "exercise_car" to R.drawable.exercise_car,
+    "exercise_boat" to R.drawable.exercise_boat,
+    "exercise_sun" to R.drawable.exercise_sun,
+    "exercise_moon" to R.drawable.exercise_moon,
+    "exercise_tree" to R.drawable.exercise_tree,
+    "exercise_flower" to R.drawable.exercise_flower,
+    "exercise_rose" to R.drawable.exercise_rose,
+    "exercise_bus" to R.drawable.exercise_bus,
+    "exercise_plane" to R.drawable.exercise_plane,
+    "exercise_cow" to R.drawable.exercise_cow,
+    "exercise_frog" to R.drawable.exercise_frog,
+    "exercise_bear" to R.drawable.exercise_bear,
+    "exercise_rabbit" to R.drawable.exercise_rabbit,
+    "exercise_mouse" to R.drawable.exercise_mouse,
+    "exercise_owl" to R.drawable.exercise_owl,
+    "exercise_crayfish" to R.drawable.exercise_crayfish,
+    "exercise_carrot" to R.drawable.exercise_carrot,
+    "exercise_tomato" to R.drawable.exercise_tomato,
+    "exercise_grapes" to R.drawable.exercise_grapes,
+    "exercise_cheese" to R.drawable.exercise_cheese,
+    "exercise_onion" to R.drawable.exercise_onion,
+    "exercise_cake" to R.drawable.exercise_cake,
+    "exercise_drum" to R.drawable.exercise_drum,
+    "exercise_spoon" to R.drawable.exercise_spoon,
+    "exercise_cup" to R.drawable.exercise_cup,
+    "exercise_juice" to R.drawable.exercise_juice,
+    "exercise_hat" to R.drawable.exercise_hat,
+    "exercise_umbrella" to R.drawable.exercise_umbrella,
+    "exercise_key" to R.drawable.exercise_key,
+    "shape_star_blue" to R.drawable.shape_star_blue,
+    "shape_star_red" to R.drawable.shape_star_red,
+    "shape_star_green" to R.drawable.shape_star_green,
+    "shape_star_yellow" to R.drawable.shape_star_yellow,
+    "shape_star_purple" to R.drawable.shape_star_purple,
+    "shape_circle_blue" to R.drawable.shape_circle_blue,
+    "shape_circle_red" to R.drawable.shape_circle_red,
+    "shape_circle_green" to R.drawable.shape_circle_green,
+    "shape_circle_yellow" to R.drawable.shape_circle_yellow,
+    "shape_circle_purple" to R.drawable.shape_circle_purple,
+    "shape_square_blue" to R.drawable.shape_square_blue,
+    "shape_square_red" to R.drawable.shape_square_red,
+    "shape_square_green" to R.drawable.shape_square_green,
+    "shape_square_yellow" to R.drawable.shape_square_yellow,
+    "shape_square_purple" to R.drawable.shape_square_purple,
+    "shape_triangle_blue" to R.drawable.shape_triangle_blue,
+    "shape_triangle_red" to R.drawable.shape_triangle_red,
+    "shape_triangle_green" to R.drawable.shape_triangle_green,
+    "shape_triangle_yellow" to R.drawable.shape_triangle_yellow,
+    "shape_triangle_purple" to R.drawable.shape_triangle_purple
+)
+
 @DrawableRes
-fun exerciseDrawableFor(assetKey: String): Int = when (assetKey) {
-    "exercise_rocket" -> R.drawable.exercise_rocket
-    "exercise_cat" -> R.drawable.exercise_cat
-    "exercise_house" -> R.drawable.exercise_house
-    "exercise_fox" -> R.drawable.exercise_fox
-    "exercise_ball" -> R.drawable.exercise_ball
-    "exercise_duck" -> R.drawable.exercise_duck
-    "exercise_apple" -> R.drawable.exercise_apple
-    "exercise_dog" -> R.drawable.exercise_dog
-    "exercise_lamp" -> R.drawable.exercise_lamp
-    "exercise_elephant" -> R.drawable.exercise_elephant
-    "exercise_fish" -> R.drawable.exercise_fish
-    else -> R.drawable.exercise_placeholder
-}
+fun exerciseDrawableFor(assetKey: String): Int = localExerciseDrawables[assetKey] ?: R.drawable.exercise_placeholder
+
+fun hasLocalExerciseDrawable(assetKey: String?): Boolean = assetKey != null && assetKey in localExerciseDrawables
